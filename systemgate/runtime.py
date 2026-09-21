@@ -44,6 +44,8 @@ def collect(psutil, docker_factory, *, procfs, limit=100, clock=time.time):
 
     def add(section, row):
         value = sections[section]
+        if any(existing["id"] == row["id"] for existing in value["results"]):
+            return True
         if len(value["results"]) >= limit:
             value["truncated"] = True
             return False
@@ -69,7 +71,6 @@ def collect(psutil, docker_factory, *, procfs, limit=100, clock=time.time):
                     error("processes", "process_changed_during_collection")
                     continue
                 identity = _identity(pid, created)
-                process_ids[pid] = (created, identity)
                 if not add(
                     "processes",
                     {
@@ -90,6 +91,7 @@ def collect(psutil, docker_factory, *, procfs, limit=100, clock=time.time):
                     },
                 ):
                     break
+                process_ids[pid] = (created, identity)
             except Exception:  # noqa: BLE001 - Collector failures must remain isolated and opaque.
                 error("processes", "process_unavailable")
     except Exception:  # noqa: BLE001 - Collector failures must remain isolated and opaque.

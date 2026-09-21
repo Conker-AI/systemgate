@@ -95,7 +95,8 @@ def test_partial_errors_never_echo_exception_and_keep_other_sections():
 
 def test_bounds_and_pid_reuse():
     ps, client = sources()
-    ps.process_iter.return_value *= 5
+    original = ps.process_iter.return_value[0].info
+    ps.process_iter.return_value = [NS(info={**original, "pid": pid}) for pid in range(42, 47)]
     value = collect(ps, lambda: client, procfs="/proc", limit=1)
     assert value["processes"]["truncated"] and value["ports"]["truncated"]
     assert all(
