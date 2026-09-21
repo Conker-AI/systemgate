@@ -12,7 +12,7 @@ from typing import Any
 
 import docker
 import psutil
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 
 from .auth import hash_key, verify_key
 from .backups import backup_status
@@ -341,3 +341,11 @@ def packages(request: Request):
 @app.get("/backups", dependencies=[Depends(require_admin)])
 def backups(request: Request):
     return backup_status(Path(request.app.state.settings.backup_root))
+
+
+@app.get("/runtime", dependencies=[Depends(require_admin)])
+def runtime(response: Response, limit: int = 100):
+    from .runtime import collect
+
+    response.headers["Cache-Control"] = "no-store"
+    return collect(psutil, lambda: docker.from_env(timeout=5), procfs=procfs_path(), limit=limit)
