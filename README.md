@@ -1,5 +1,7 @@
 # SystemGate
 
+Part of **[Conker](https://github.com/alexeybe1kin/conker)**, independently usable and deployable. [Project map](https://github.com/alexeybe1kin/conker/blob/feat/dashboard/docs/conker-project.md) · [Connected local setup](https://github.com/alexeybe1kin/conker/blob/feat/dashboard/docs/local-windows-startup.md).
+
 Read-only local system telemetry API.
 
 SystemGate exposes host, container, package, log, and backup status without adding any write, exec, or mutation endpoint. It is a standalone gate: run it by itself, or let a dashboard such as Conker consume it through a server-side proxy.
