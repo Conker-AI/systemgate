@@ -4,7 +4,7 @@ import hashlib
 import math
 import socket
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 MAX_ROWS = 200
 MAX_SCAN = 2000
@@ -92,9 +92,9 @@ def collect(psutil, docker_factory, *, procfs, limit=100, clock=time.time):
                 ):
                     break
                 process_ids[pid] = (created, identity)
-            except Exception:  # noqa: BLE001 - Collector failures must remain isolated and opaque.
+            except Exception:  # Collector failures must remain isolated and opaque.
                 error("processes", "process_unavailable")
-    except Exception:  # noqa: BLE001 - Collector failures must remain isolated and opaque.
+    except Exception:  # Collector failures must remain isolated and opaque.
         error("processes", "collection_failed", True)
 
     try:
@@ -119,7 +119,7 @@ def collect(psutil, docker_factory, *, procfs, limit=100, clock=time.time):
                     created = float(psutil.Process(conn.pid).create_time())
                     if created == process_ids[conn.pid][0]:
                         process_id = process_ids[conn.pid][1]
-                except Exception:  # noqa: BLE001 - Collector failures must remain isolated and opaque.
+                except Exception:  # Collector failures must remain isolated and opaque.
                     error("ports", "process_link_unavailable")
             key = f"{protocol}:{address}:{port}:{process_id or 'unknown'}"
             if not add(
@@ -138,7 +138,7 @@ def collect(psutil, docker_factory, *, procfs, limit=100, clock=time.time):
                 },
             ):
                 break
-    except Exception:  # noqa: BLE001 - Collector failures must remain isolated and opaque.
+    except Exception:  # Collector failures must remain isolated and opaque.
         error("ports", "listener_collection_failed", True)
 
     client = None
@@ -207,22 +207,22 @@ def collect(psutil, docker_factory, *, procfs, limit=100, clock=time.time):
                         },
                     ):
                         break
-            except Exception:  # noqa: BLE001 - Collector failures must remain isolated and opaque.
+            except Exception:  # Collector failures must remain isolated and opaque.
                 error("containers", "container_unavailable")
                 error("ports", "container_bindings_unavailable")
-    except Exception:  # noqa: BLE001 - Collector failures must remain isolated and opaque.
+    except Exception:  # Collector failures must remain isolated and opaque.
         error("containers", "collection_failed", True)
         error("ports", "container_bindings_unavailable", True)
     finally:
         if client is not None:
             try:
                 client.close()
-            except Exception:  # noqa: BLE001 - Collector failures must remain isolated and opaque.
+            except Exception:  # Collector failures must remain isolated and opaque.
                 error("containers", "client_close_failed")
     finished = clock()
     return {
         "mode": "observed",
-        "sampledAt": datetime.fromtimestamp(started, timezone.utc).isoformat(),
+        "sampledAt": datetime.fromtimestamp(started, UTC).isoformat(),
         "ageSeconds": max(0, finished - started),
         "collectionSeconds": max(0, finished - started),
         "source": {

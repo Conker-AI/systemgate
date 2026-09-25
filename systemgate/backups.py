@@ -114,7 +114,7 @@ def verify_snapshot(directory: Path) -> dict:
     except (KeyError, TypeError, AttributeError, ValueError, OverflowError):
         _invalid("Snapshot creation time is invalid; verify the manifest and system clock.")
     files = manifest.get("files")
-    if not isinstance(files, dict) or not REQUIRED <= files.keys():
+    if not isinstance(files, dict) or not files.keys() >= REQUIRED:
         _invalid("Required files are missing from the manifest; create a complete backup.")
     actual = _files(directory)
     if files.keys() != actual.keys():
@@ -126,7 +126,7 @@ def verify_snapshot(directory: Path) -> dict:
                    for image in images.values())):
         _invalid("Image identities are invalid; obtain an intact version manifest.")
     stores = manifest.get("stores")
-    if (not isinstance(stores, dict) or not STORES <= stores.keys()
+    if (not isinstance(stores, dict) or not stores.keys() >= STORES
             or any(name not in STORES and not re.fullmatch(r"extra-[a-z]+-[0-9]+", name)
                    for name in stores)
             or {name + ".tar" for name in stores} != {n for n in files if n.endswith(".tar")}):

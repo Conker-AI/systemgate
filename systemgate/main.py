@@ -6,7 +6,7 @@ import platform
 import subprocess
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -115,7 +115,7 @@ def health(request: Request):
     scanning, and so one dashboard renders every module with no special cases.
     """
     settings = request.app.state.settings
-    checked_at = datetime.now(timezone.utc)
+    checked_at = datetime.now(UTC)
     checks = {
         "procfs": _probe(psutil.virtual_memory),
         "docker": _probe(lambda: _docker_client().ping()),
@@ -139,7 +139,7 @@ def health(request: Request):
 def vitals():
     temps = {}
     try:
-        sensors = getattr(psutil, "sensors_temperatures")
+        sensors = psutil.sensors_temperatures
         temps = {name: [entry._asdict() for entry in values] for name, values in sensors(fahrenheit=False).items()}
     except (AttributeError, OSError):
         temps = {}
