@@ -6,6 +6,12 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+- **Remove Docker daemon and host-root authority from the shipped container.**
+  Compose no longer mounts `/var/run/docker.sock` or `/`. Container telemetry
+  now reports explicitly unavailable while bounded procfs, listener, backup and
+  container-scoped disk telemetry continue to work. The Docker SDK dependency
+  and Docker log scraping path have also been removed.
+
 ## 0.3.0
 
 - Publish bounded read-only runtime inventory with explicit partial and unavailable

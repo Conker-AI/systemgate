@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -25,39 +26,18 @@ def test_health_and_auth(tmp_path, monkeypatch):
         assert client.get("/vitals").status_code == 401
 
 
-def test_health_reports_degraded_when_a_dependency_is_down(tmp_path, monkeypatch):
-    """A health check that cannot reach its dependency must say so.
-
-    The previous implementation returned a hardcoded "ok", so a broken Docker
-    socket left /containers failing while health still claimed everything was
-    fine. That is the exact silent-fallback this project treats as a bug.
-    """
-    import systemgate.main as main
-
-    def broken():
-        raise OSError("socket unavailable")
-
-    monkeypatch.setattr(main, "_docker_client", broken)
-
+def test_health_reports_container_telemetry_as_intentionally_unconfigured(tmp_path, monkeypatch):
     with make_client(tmp_path, monkeypatch) as client:
         body = client.get("/health").json()
 
-    assert body["status"] == "degraded"
-    assert body["degraded"] == ["docker"]
-    assert body["checks"]["docker"]["status"] == "unavailable"
-    # the other probes are unaffected - degraded is per dependency, not global
+    assert body["status"] == "ok"
+    assert body["degraded"] == []
+    assert body["checks"]["docker"]["status"] == "not_configured"
     assert body["checks"]["procfs"]["status"] == "ok"
 
 
 def test_health_leaks_nothing_to_an_unauthenticated_caller(tmp_path, monkeypatch):
     """/health takes no key, so its detail must never carry host specifics."""
-    import systemgate.main as main
-
-    def broken():
-        raise OSError("/var/run/docker.sock is missing on host /srv/secret")
-
-    monkeypatch.setattr(main, "_docker_client", broken)
-
     with make_client(tmp_path, monkeypatch) as client:
         raw = client.get("/health").text
 
@@ -143,19 +123,21 @@ def test_vitals_with_mocked_psutil(tmp_path, monkeypatch):
         assert data["memory"]["total"] == 100
 
 
-def test_containers_with_mocked_docker(tmp_path, monkeypatch):
-    import systemgate.main as main
-    container = Mock(short_id="abc123", status="running", attrs={"Created": "now"})
-    container.name = "agentgate-api"
-    container.image.tags = ["agentgate:latest"]
-    container.stats.return_value = {"cpu_stats": {}}
-    docker_client = Mock()
-    docker_client.containers.list.return_value = [container]
-    monkeypatch.setattr(main, "_docker_client", lambda: docker_client)
-
+def test_containers_truthfully_reports_unavailable(tmp_path, monkeypatch):
     with make_client(tmp_path, monkeypatch) as client:
         data = client.get("/containers", headers=headers()).json()
-        assert data["results"][0]["name"] == "agentgate-api"
+    assert data == {
+        "status": "unavailable",
+        "results": [],
+        "errors": ["container_telemetry_not_configured"],
+    }
+
+
+def test_shipped_compose_has_no_docker_socket_or_host_root_mount():
+    compose = (Path(__file__).parents[1] / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "docker.sock" not in compose
+    assert "/host/root" not in compose
+    assert not any(line.strip().startswith("- /:/") for line in compose.splitlines())
 
 
 def test_services_inventory_is_metadata_only(tmp_path, monkeypatch):

@@ -93,6 +93,24 @@ def test_partial_errors_never_echo_exception_and_keep_other_sections():
     client.close.assert_called_once()
 
 
+def test_runtime_without_container_source_is_truthful_and_keeps_os_telemetry():
+    ps, _ = sources()
+    value = collect(ps, procfs="/host/proc")
+
+    assert value["status"] == "partial"
+    assert value["processes"]["status"] == "ok"
+    assert value["containers"] == {
+        "status": "unavailable",
+        "results": [],
+        "truncated": False,
+        "errors": ["container_telemetry_not_configured"],
+    }
+    assert value["ports"]["status"] == "partial"
+    assert value["ports"]["results"]
+    assert "container_bindings_not_configured" in value["ports"]["errors"]
+    assert value["source"]["containerScope"] == "unavailable"
+
+
 def test_bounds_and_pid_reuse():
     ps, client = sources()
     original = ps.process_iter.return_value[0].info
@@ -131,15 +149,15 @@ def test_route_owner_auth_and_no_mutations(tmp_path, monkeypatch):
     monkeypatch.setattr(dotenv, "load_dotenv", lambda: None)
     from systemgate import main
 
-    ps, client = sources()
+    ps, _ = sources()
     monkeypatch.setattr(main, "psutil", ps)
     monkeypatch.setattr(main, "procfs_path", lambda: "/proc")
-    monkeypatch.setattr(main.docker, "from_env", lambda **kwargs: client)
     with TestClient(main.app) as api:
         assert api.get("/runtime").status_code == 401
         ps.process_iter.assert_not_called()
         response = api.get("/runtime", headers={"X-SystemGate-Key": "test-runtime-key"})
         assert response.status_code == 200 and response.json()["mode"] == "observed"
+        assert response.json()["containers"]["status"] == "unavailable"
         assert (
             api.post(
                 "/runtime", headers={"X-SystemGate-Key": "test-runtime-key"}
