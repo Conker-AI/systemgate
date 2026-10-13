@@ -6,6 +6,12 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+## 0.3.0
+
+- Publish bounded read-only runtime inventory with explicit partial and unavailable
+  results and stable duplicate observations.
+- Keep truncated inventory references consistent without claiming unseen host data.
+
 ## 0.2.3
 
 - **Backup telemetry reads the mounted location and verifies what it reports.**
