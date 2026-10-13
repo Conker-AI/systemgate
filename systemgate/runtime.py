@@ -10,6 +10,14 @@ MAX_ROWS = 200
 MAX_SCAN = 2000
 
 
+class _ContainerTelemetryNotConfigured(Exception):
+    pass
+
+
+def _unconfigured_container_source():
+    raise _ContainerTelemetryNotConfigured
+
+
 def _text(value, limit=160):
     return str(value or "")[:limit]
 
@@ -26,8 +34,10 @@ def _identity(pid, created):
     return f"process:{pid}:{created.hex()}"
 
 
-def collect(psutil, docker_factory, *, procfs, limit=100, clock=time.time):
+def collect(psutil, docker_factory=None, *, procfs, limit=100, clock=time.time):
     started = clock()
+    container_source_configured = docker_factory is not None
+    docker_factory = docker_factory or _unconfigured_container_source
     sections = {
         key: {"status": "ok", "results": [], "truncated": False, "errors": []}
         for key in ("processes", "containers", "ports")
@@ -210,6 +220,9 @@ def collect(psutil, docker_factory, *, procfs, limit=100, clock=time.time):
             except Exception:  # Collector failures must remain isolated and opaque.
                 error("containers", "container_unavailable")
                 error("ports", "container_bindings_unavailable")
+    except _ContainerTelemetryNotConfigured:
+        error("containers", "container_telemetry_not_configured", True)
+        error("ports", "container_bindings_not_configured", True)
     except Exception:  # Collector failures must remain isolated and opaque.
         error("containers", "collection_failed", True)
         error("ports", "container_bindings_unavailable", True)
@@ -231,7 +244,11 @@ def collect(psutil, docker_factory, *, procfs, limit=100, clock=time.time):
             if procfs != "/proc"
             else "collector-namespace",
             "networkScope": "collector-namespace",
-            "containerScope": "configured-docker-daemon",
+            "containerScope": (
+                "configured-container-source"
+                if container_source_configured
+                else "unavailable"
+            ),
         },
         "status": "partial"
         if any(s["status"] != "ok" or s["truncated"] for s in sections.values())

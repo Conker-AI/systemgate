@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import platform
 import subprocess
@@ -10,7 +9,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import docker
 import psutil
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 
@@ -42,14 +40,6 @@ def procfs_path() -> str:
 
 def _bounded(value: str, limit: int = 4000) -> str:
     return value[-limit:]
-
-
-def _json_safe(value: Any) -> Any:
-    try:
-        json.dumps(value)
-        return value
-    except TypeError:
-        return {}
 
 
 def _secret_path(settings: Settings) -> Path:
@@ -118,7 +108,9 @@ def health(request: Request):
     checked_at = datetime.now(UTC)
     checks = {
         "procfs": _probe(psutil.virtual_memory),
-        "docker": _probe(lambda: _docker_client().ping()),
+        # A read-only bind flag does not make the Docker API read-only.
+        # SystemGate intentionally holds no Docker daemon credential.
+        "docker": {"status": "not_configured"},
         "admin_key": _probe(lambda: _secret_path(settings).read_text(encoding="utf-8")),
     }
     degraded = sorted(name for name, c in checks.items() if c["status"] not in HEALTHY)
@@ -175,10 +167,6 @@ def vitals():
             "scope": "host" if procfs != "/proc" else "container",
         },
     }
-
-
-def _docker_client():
-    return docker.from_env()
 
 
 def _safe_process_name(pid: int | None) -> str:
@@ -248,34 +236,11 @@ def services(limit: int = 80):
 
 @app.get("/containers", dependencies=[Depends(require_admin)])
 def containers():
-    try:
-        client = _docker_client()
-        rows = []
-        for container in client.containers.list(all=True):
-            stats = {}
-            image_tags = getattr(container.image, "tags", []) or []
-            image = ", ".join(str(tag) for tag in image_tags)
-            if not image:
-                image = str(getattr(container.image, "short_id", "unknown"))
-            attrs = getattr(container, "attrs", {})
-            if not isinstance(attrs, dict):
-                attrs = {}
-            if container.status == "running":
-                try:
-                    stats = _json_safe(container.stats(stream=False))
-                except Exception:
-                    stats = {}
-            rows.append({
-                "id": str(getattr(container, "short_id", "")),
-                "name": str(getattr(container, "name", "")),
-                "image": image,
-                "status": str(getattr(container, "status", "unknown")),
-                "created": attrs.get("Created"),
-                "stats": stats,
-            })
-        return {"results": rows}
-    except Exception as exc:
-        return {"results": [], "error": str(exc)}
+    return {
+        "status": "unavailable",
+        "results": [],
+        "errors": ["container_telemetry_not_configured"],
+    }
 
 
 @app.get("/processes", dependencies=[Depends(require_admin)])
@@ -294,10 +259,7 @@ def processes(limit: int = 20):
 
 
 def _journal_errors() -> str:
-    commands = [
-        ["journalctl", "-p", "3", "-n", "80", "--no-pager"],
-        ["sh", "-lc", "docker ps --format '{{.Names}}' | xargs -r -n1 docker logs --tail 40 2>&1"],
-    ]
+    commands = [["journalctl", "-p", "3", "-n", "80", "--no-pager"]]
     chunks = []
     for command in commands:
         try:
@@ -348,4 +310,4 @@ def runtime(response: Response, limit: int = 100):
     from .runtime import collect
 
     response.headers["Cache-Control"] = "no-store"
-    return collect(psutil, lambda: docker.from_env(timeout=5), procfs=procfs_path(), limit=limit)
+    return collect(psutil, None, procfs=procfs_path(), limit=limit)

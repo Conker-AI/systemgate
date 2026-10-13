@@ -18,17 +18,15 @@ services:
       # itself honours no environment variable for this, so the name is ours
       # and the assignment has to happen in code - see systemgate/main.py.
       SYSTEMGATE_PROCFS_PATH: /host/proc
-      SYSTEMGATE_DISK_PATH: /host/root
+      # The host root is deliberately not mounted. Disk figures therefore
+      # describe this container and /vitals reports that scope explicitly.
+      SYSTEMGATE_DISK_PATH: /
       SYSTEMGATE_BACKUP_ROOT: /backups
     ports:
       - "127.0.0.1:8040:8040"
     volumes:
       - ./data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
-      # Read-only, so disk figures describe the host filesystem. Reading is the
-      # entire capability here; there is no write path to reach for.
-      - /:/host/root:ro
       - ${SYSTEMGATE_BACKUP_ROOT:-~/systemgate-backups}:/backups:ro
     networks:
       - systemgate_net
