@@ -65,7 +65,7 @@ Full model: [security](docs/security.md).
 ## Development
 
 ```bash
-pip install -r requirements.txt pytest httpx
+pip install -r requirements-dev.txt
 python -m pytest tests -q
 ```
 
