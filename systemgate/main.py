@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
 
 # One place, so /health and the OpenAPI document cannot disagree about
 # which version is running. They had: /health said 0.1.0 at tag v0.2.1.
-SERVICE_VERSION = "0.3.0"
+SERVICE_VERSION = "0.4.0"
 
 app = FastAPI(title="SystemGate", version=SERVICE_VERSION, lifespan=lifespan)
 
