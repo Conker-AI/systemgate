@@ -6,6 +6,9 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+- A weekly security check (`.github/workflows/security.yml`) audits every dependency this
+  repository ships against the public advisory databases each Monday and whenever they
+  change, and fails loudly.
 - **Remove Docker daemon and host-root authority from the shipped container.**
   Compose no longer mounts `/var/run/docker.sock` or `/`. Container telemetry
   now reports explicitly unavailable while bounded procfs, listener, backup and
