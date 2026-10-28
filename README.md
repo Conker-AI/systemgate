@@ -4,6 +4,7 @@
 Host vitals, processes, packages, logs and verified backups, with no way to change any of them.</p>
 <p align="center">
   <a href="https://github.com/Conker-AI/systemgate/actions/workflows/ci.yml"><img src="https://github.com/Conker-AI/systemgate/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/Conker-AI/systemgate/tags"><img src="https://img.shields.io/github/v/tag/Conker-AI/systemgate?sort=semver&label=release" alt="Latest release" /></a>
   <img src="https://img.shields.io/badge/python-3.12-3776AB" alt="Python 3.12" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="AGPL-3.0 license" /></a>
   <a href="https://github.com/Conker-AI/conker"><img src="https://img.shields.io/badge/part%20of-Conker-e36b2c" alt="Part of Conker" /></a>
@@ -39,7 +40,7 @@ Every route except `/health` needs `X-SystemGate-Key`. Every response is bounded
 
 ## Quick start
 
-Requires Docker with Compose.
+Requires Docker with Compose. Published image: `ghcr.io/conker-ai/systemgate`.
 
 ```bash
 cp .env.example .env              # then set SYSTEMGATE_ADMIN_KEY to a long random value
@@ -68,6 +69,14 @@ Full model: [security](docs/security.md).
 pip install -r requirements-dev.txt
 python -m pytest tests -q
 ```
+
+## Documentation
+
+| | |
+|---|---|
+| [Security model](docs/security.md) | Keys, mounts and what it can never do |
+| [Backups](docs/backups.md) | Which snapshots count as verified |
+| [Runtime inventory](docs/runtime-inventory.md) | Processes, containers and ports in one bounded view |
 
 ## License
 
