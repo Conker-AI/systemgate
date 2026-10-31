@@ -131,6 +131,42 @@ def test_even_hash_matching_unsafe_archives_fail(tmp_path, member_name, kind):
     assert backups.backup_status(tmp_path)["latest"] is None
 
 
+def test_a_truncated_archive_is_never_a_recovery_point(tmp_path):
+    directory = snapshot(tmp_path)
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as archive:
+        payload = b"SQLite format 3\x00" + b"x" * 5000
+        member = tarfile.TarInfo("pi.db")
+        member.size = len(payload)
+        archive.addfile(member, io.BytesIO(payload))
+        tail = tarfile.TarInfo("data")
+        tail.size = 1024
+        archive.addfile(tail, io.BytesIO(b"y" * 1024))
+    data = buffer.getvalue()
+    # pi.db's 5016 bytes occupy 5120 padded, so the cut lands 100 bytes into the
+    # second member's payload.
+    (directory / "pi.tar").write_bytes(data[:512 + 5120 + 512 + 100])
+    save_manifest(directory)
+    result = backups.backup_status(tmp_path)
+    assert result["latest"] is None
+    assert [row["name"] for row in result["rejected"]] == ["snapshot-a"]
+
+
+def test_only_the_required_store_payload_is_opened(tmp_path, monkeypatch):
+    snapshot(tmp_path)
+    opened = []
+    original = tarfile.TarFile.extractfile
+
+    def record(archive, member):
+        opened.append(member.name)
+        return original(archive, member)
+
+    monkeypatch.setattr(tarfile.TarFile, "extractfile", record)
+    result = backups.backup_status(tmp_path)
+    assert result["latest"] is not None and result["latest"]["status"] == "verified"
+    assert sorted(opened) == ["pi.db", "toolgate.db"]
+
+
 def test_read_errors_are_unverifiable_without_leaking_payload(tmp_path, monkeypatch):
     snapshot(tmp_path)
     monkeypatch.setattr(backups, "_hash", lambda path: (_ for _ in ()).throw(

@@ -76,12 +76,13 @@ def _archive(path: Path, required: str | None) -> None:
             seen.add(member.name)
             if member.name == required and not member.isfile():
                 _invalid("Required SQLite store is not a file; obtain an intact snapshot.")
-            if member.isfile():
+            # The manifest hash already proved these bytes, and walking to the
+            # next header rejects archives cut inside a member's data, so only
+            # the required store's SQLite magic needs a payload read.
+            if member.isfile() and member.name == required:
                 with archive.extractfile(member) as stream:
-                    if member.name == required and stream.read(16) != b"SQLite format 3\x00":
+                    if stream.read(16) != b"SQLite format 3\x00":
                         _invalid("Required SQLite store is invalid; obtain an intact snapshot.")
-                    while stream.read(1024 * 1024):
-                        pass
     if required and required not in seen:
         _invalid("Required SQLite store is missing; obtain an intact snapshot.")
 
