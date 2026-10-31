@@ -184,3 +184,61 @@ def test_processes_logs_packages_and_backups_are_bounded(tmp_path, monkeypatch):
         assert backup_state["latest"] is None
         assert backup_state["rejected"][0]["name"] == "20260101T000000Z"
         assert backup_state["rejected"][0]["status"] == "incomplete"
+
+
+def test_processes_never_return_command_lines(tmp_path, monkeypatch):
+    import systemgate.main as main
+    asked = []
+    info = {"pid": 7, "name": "app", "username": "me", "cpu_percent": 0.0, "memory_percent": 0.0,
+            "cmdline": ["app", "--password", "hunter2"], "environ": {"TOKEN": "hunter2"}}
+
+    def process_iter(fields):
+        asked.extend(fields)
+        return [Mock(info=info)]
+
+    monkeypatch.setattr(main.psutil, "process_iter", process_iter)
+
+    with make_client(tmp_path, monkeypatch) as client:
+        response = client.get("/processes", headers=headers())
+
+    assert response.json()["results"] == [
+        {"pid": 7, "name": "app", "username": "me", "cpu_percent": 0.0, "memory_percent": 0.0}
+    ]
+    assert "cmdline" not in asked
+    assert "hunter2" not in response.text
+
+
+def test_host_output_loses_terminal_control_codes(monkeypatch):
+    import systemgate.main as main
+
+    assert main._bounded("\x1b[31mred\x07\n\tok\x9b\x7f") == "[31mred\n\tok"
+    assert main._bounded("ab\x1bcd", 3) == "bcd"
+    output = Mock(stdout="\x1b]0;title\x07disk full\n", stderr="")
+    monkeypatch.setattr(main.subprocess, "run", lambda *args, **kwargs: output)
+    assert main._journal_errors() == "]0;titledisk full\n"
+    assert main._run_summary(["pip"])["output"] == "]0;titledisk full\n"
+
+
+def test_a_failed_command_reports_only_the_kind_of_error(monkeypatch):
+    import systemgate.main as main
+
+    def run(*args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", "/srv/private/journalctl")
+
+    monkeypatch.setattr(main.subprocess, "run", run)
+
+    assert main._run_summary(["apt"]) == {"ok": False, "output": "FileNotFoundError"}
+    assert main._journal_errors() == "journalctl unavailable: FileNotFoundError"
+
+
+def test_startup_primes_the_key_check_so_wrong_keys_stay_cheap(tmp_path, monkeypatch):
+    from systemgate import auth
+    monkeypatch.setattr(auth, "_matched", {})
+    with make_client(tmp_path, monkeypatch) as client:
+        slow = []
+        real = auth.hashlib.pbkdf2_hmac
+        monkeypatch.setattr(auth.hashlib, "pbkdf2_hmac", lambda *args: slow.append(args) or real(*args))
+        assert client.get("/vitals", headers={"X-SystemGate-Key": "wrong-key-0000"}).status_code == 401
+        assert client.get("/processes", headers=headers()).status_code == 200
+
+    assert slow == []

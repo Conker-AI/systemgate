@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import subprocess
 import time
 from contextlib import asynccontextmanager
@@ -38,8 +39,13 @@ def procfs_path() -> str:
     return str(getattr(psutil, "PROCFS_PATH", "/proc"))
 
 
+# Terminal control codes: C0 except tab and newline, DEL and C1. Journal lines carry whatever any
+# host process printed, and an escape sequence must not reach a terminal-style view intact.
+_CONTROL = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
 def _bounded(value: str, limit: int = 4000) -> str:
-    return value[-limit:]
+    return _CONTROL.sub("", value)[-limit:]
 
 
 def _secret_path(settings: Settings) -> Path:
@@ -69,6 +75,9 @@ def require_admin(request: Request, x_systemgate_key: str | None = Header(None, 
 async def lifespan(app: FastAPI):
     settings = get_settings()
     _ensure_key_hash(settings)
+    if settings.admin_key:
+        # One slow check now, so a wrong key never costs a slow check later (see verify_key).
+        verify_key(settings.admin_key, _secret_path(settings).read_text(encoding="utf-8").strip())
     app.state.settings = settings
     app.state.package_cache = {"at": 0.0, "value": None}
     yield
@@ -243,15 +252,17 @@ def containers():
     }
 
 
+# Metadata only, like /runtime: a command line can carry a password or a key.
+_PROCESS_FIELDS = ["pid", "name", "username", "cpu_percent", "memory_percent"]
+
+
 @app.get("/processes", dependencies=[Depends(require_admin)])
 def processes(limit: int = 20):
     limit = max(1, min(limit, 100))
     rows = []
-    for proc in psutil.process_iter(["pid", "name", "username", "cpu_percent", "memory_percent", "cmdline"]):
+    for proc in psutil.process_iter(_PROCESS_FIELDS):
         try:
-            item = proc.info
-            item["cmdline"] = " ".join(item.get("cmdline") or [])[:300]
-            rows.append(item)
+            rows.append({field: proc.info.get(field) for field in _PROCESS_FIELDS})
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
     rows.sort(key=lambda item: (float(item.get("cpu_percent") or 0), float(item.get("memory_percent") or 0)), reverse=True)
@@ -266,7 +277,7 @@ def _journal_errors() -> str:
             result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=8)
             chunks.append(result.stdout or result.stderr)
         except Exception as exc:
-            chunks.append(f"{command[0]} unavailable: {exc}")
+            chunks.append(f"{command[0]} unavailable: {type(exc).__name__}")
     return _bounded("\n".join(chunks), 12000)
 
 
@@ -280,7 +291,7 @@ def _run_summary(command: list[str]) -> dict[str, Any]:
         result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=12)
         return {"ok": result.returncode == 0, "output": _bounded(result.stdout or result.stderr, 2000)}
     except Exception as exc:
-        return {"ok": False, "output": str(exc)}
+        return {"ok": False, "output": type(exc).__name__}
 
 
 @app.get("/packages", dependencies=[Depends(require_admin)])

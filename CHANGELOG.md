@@ -6,6 +6,15 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+- **`/processes` no longer returns command lines, and wrong keys no longer cost PBKDF2.**
+  `/processes` listed each host process's command line, which can carry a password or
+  a key; it now returns the same metadata as `/runtime` (pid, name, user, CPU, memory).
+  Every admin request ran 200,000 rounds of PBKDF2, so anyone who could reach the port
+  could tie up the service with wrong keys; after the first match (at startup, from the
+  configured key) a constant-time SHA-256 compare decides. Journal and package output
+  loses terminal control codes, and a command that cannot run reports only its kind of
+  error.
+
 ## 0.4.0
 
 - **Remove Docker daemon and host-root authority from the shipped container.**
