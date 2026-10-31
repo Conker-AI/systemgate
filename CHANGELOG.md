@@ -6,6 +6,12 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+- **Backup verification reads each archive once instead of twice.** `GET /backups` hashed every
+  snapshot file and then read every archive member's payload to the end, doubling the disk reads
+  of large model archives on each request. The hash already proves the bytes match the manifest,
+  and the tar header walk rejects the same truncated archives, so members are now checked by
+  their headers, plus the first 16 bytes of each required SQLite store.
+
 - **`/processes` no longer returns command lines, and wrong keys no longer cost PBKDF2.**
   `/processes` listed each host process's command line, which can carry a password or
   a key; it now returns the same metadata as `/runtime` (pid, name, user, CPU, memory).
