@@ -152,6 +152,18 @@ def test_a_truncated_archive_is_never_a_recovery_point(tmp_path):
     assert [row["name"] for row in result["rejected"]] == ["snapshot-a"]
 
 
+def test_a_required_store_that_is_not_sqlite_is_never_a_recovery_point(tmp_path):
+    directory = snapshot(tmp_path)
+    with tarfile.open(directory / "pi.tar", "w") as archive:
+        member = tarfile.TarInfo("pi.db")
+        member.size = 16
+        archive.addfile(member, io.BytesIO(b"not a database!!"))
+    save_manifest(directory)
+    result = backups.backup_status(tmp_path)
+    assert result["latest"] is None
+    assert [row["name"] for row in result["rejected"]] == ["snapshot-a"]
+
+
 def test_only_the_required_store_payload_is_opened(tmp_path, monkeypatch):
     snapshot(tmp_path)
     opened = []
