@@ -12,6 +12,7 @@ def make_client(tmp_path, monkeypatch):
     monkeypatch.setenv("SYSTEMGATE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("SYSTEMGATE_BACKUP_ROOT", str(tmp_path / "backups"))
     from systemgate.main import app
+
     return TestClient(app)
 
 
@@ -19,43 +20,44 @@ def headers():
     return {"X-SystemGate-Key": "system-test-key-1234"}
 
 
-@pytest.mark.parametrize("ip,expected_scope", [
-    ("127.0.0.1", "loopback"),
-    ("127.9.9.9", "loopback"),
-    ("::1", "loopback"),
-    ("100.64.0.5", "tailscale"),
-    ("10.1.2.3", "private-lan"),
-    ("192.168.1.9", "private-lan"),
-    ("172.16.0.1", "private-lan"),
-    ("172.31.255.1", "private-lan"),
-    ("172.15.0.1", "public-or-host"),
-    ("172.32.0.1", "public-or-host"),
-    ("8.8.8.8", "public-or-host"),
-    ("fe80::1", "public-or-host"),
-])
+@pytest.mark.parametrize(
+    "ip,expected_scope",
+    [
+        ("127.0.0.1", "loopback"),
+        ("127.9.9.9", "loopback"),
+        ("::1", "loopback"),
+        ("100.64.0.5", "tailscale"),
+        ("10.1.2.3", "private-lan"),
+        ("192.168.1.9", "private-lan"),
+        ("172.16.0.1", "private-lan"),
+        ("172.31.255.1", "private-lan"),
+        ("172.15.0.1", "public-or-host"),
+        ("172.32.0.1", "public-or-host"),
+        ("8.8.8.8", "public-or-host"),
+        ("fe80::1", "public-or-host"),
+    ],
+)
 def test_address_scopes(ip, expected_scope):
     import systemgate.main as main
+
     addr = SimpleNamespace(ip=ip, port=8080)
     result = main._safe_addr(addr)
     assert result == f"{expected_scope}:8080"
 
 
-@pytest.mark.parametrize("ip,docker,expected", [
-    ("0.0.0.0", True, "container-internal:53"),
-    ("0.0.0.0", False, "all-interfaces:53"),
-    ("::", True, "container-internal:53"),
-    ("::", False, "all-interfaces:53"),
-])
+@pytest.mark.parametrize(
+    "ip,docker,expected",
+    [
+        ("0.0.0.0", True, "container-internal:53"),
+        ("0.0.0.0", False, "all-interfaces:53"),
+        ("::", True, "container-internal:53"),
+        ("::", False, "all-interfaces:53"),
+    ],
+)
 def test_wildcard_scope_depends_on_a_container(ip, docker, expected, monkeypatch):
     import systemgate.main as main
 
-    # Mock the Path class constructor
-    def mock_path_constructor(path_str):
-        if path_str == "/.dockerenv":
-            return SimpleNamespace(exists=lambda: docker)
-        return main.Path(path_str)
-
-    monkeypatch.setattr(main, "Path", mock_path_constructor)
+    monkeypatch.setattr(main, "Path", lambda _p: SimpleNamespace(exists=lambda: docker))
     addr = SimpleNamespace(ip=ip, port=53)
     result = main._safe_addr(addr)
     assert result == expected
@@ -123,7 +125,7 @@ def test_services_group_dedupe_and_sort(tmp_path, monkeypatch):
     assert alpha["name"] == "alpha"
     assert alpha["status"] == "listening"
     assert alpha["kind"] == "process-listener"
-    assert set(alpha["listeners"]) == {"loopback:81", "private-lan:82"}
+    assert alpha["listeners"] == ["loopback:81", "private-lan:82"]
 
     # Check second service (unknown)
     unknown = results[1]
@@ -131,7 +133,7 @@ def test_services_group_dedupe_and_sort(tmp_path, monkeypatch):
     assert unknown["name"] == "unknown"
     assert unknown["status"] == "listening"
     assert unknown["kind"] == "process-listener"
-    assert set(unknown["listeners"]) == {"loopback:90", "loopback:91", "loopback:92"}
+    assert unknown["listeners"] == ["loopback:90", "loopback:91", "loopback:92"]
 
     # Check third service (zeta)
     zeta = results[2]
@@ -148,11 +150,9 @@ def test_services_limit_is_clamped(tmp_path, monkeypatch):
     # Create 250 connections
     connections = []
     for i in range(1, 251):
-        connections.append(Mock(
-            status="LISTEN",
-            laddr=SimpleNamespace(ip="127.0.0.1", port=8000 + i),
-            pid=i
-        ))
+        connections.append(
+            Mock(status="LISTEN", laddr=SimpleNamespace(ip="127.0.0.1", port=8000 + i), pid=i)
+        )
 
     monkeypatch.setattr(main.psutil, "net_connections", lambda kind: connections)
 
@@ -199,7 +199,11 @@ def test_services_limit_is_clamped(tmp_path, monkeypatch):
 def test_services_survive_a_denied_connection_listing(tmp_path, monkeypatch):
     import systemgate.main as main
 
-    monkeypatch.setattr(main.psutil, "net_connections", lambda kind: (_ for _ in ()).throw(main.psutil.AccessDenied()))
+    monkeypatch.setattr(
+        main.psutil,
+        "net_connections",
+        lambda kind: (_ for _ in ()).throw(main.psutil.AccessDenied()),
+    )
 
     with make_client(tmp_path, monkeypatch) as client:
         response = client.get("/services", headers=headers())
@@ -213,35 +217,49 @@ def test_services_survive_a_denied_connection_listing(tmp_path, monkeypatch):
 def test_processes_sort_skip_and_clamp(tmp_path, monkeypatch):
     import systemgate.main as main
 
-    # Create mock process objects that behave like psutil process objects
-    class MockProcess:
-        def __init__(self, info_dict=None, raises_access_denied=False):
-            if raises_access_denied:
-                self.info = None  # This will cause AccessDenied when accessed
-            else:
-                self.info = info_dict or {}
-
+    class Denied:
         @property
         def info(self):
-            if hasattr(self, '_raises_access_denied') and self._raises_access_denied:
-                raise main.psutil.AccessDenied()
-            return self._info
-
-        @info.setter
-        def info(self, value):
-            if value is None:
-                self._raises_access_denied = True
-                self._info = {}
-            else:
-                self._raises_access_denied = False
-                self._info = value
+            raise main.psutil.AccessDenied()
 
     processes = [
-        MockProcess({"pid": 1, "name": "proc1", "username": "user", "cpu_percent": 1.0, "memory_percent": 5.0}),
-        MockProcess({"pid": 2, "name": "proc2", "username": "user", "cpu_percent": 9.0, "memory_percent": 1.0}),
-        MockProcess(raises_access_denied=True),  # This will raise AccessDenied
-        MockProcess({"pid": 3, "name": "proc3", "username": "user", "cpu_percent": 1.0, "memory_percent": 7.0}),
-        MockProcess({"pid": 4, "name": "proc4", "username": "user", "cpu_percent": None, "memory_percent": None}),
+        Mock(
+            info={
+                "pid": 1,
+                "name": "proc1",
+                "username": "user",
+                "cpu_percent": 1.0,
+                "memory_percent": 5.0,
+            }
+        ),
+        Mock(
+            info={
+                "pid": 2,
+                "name": "proc2",
+                "username": "user",
+                "cpu_percent": 9.0,
+                "memory_percent": 1.0,
+            }
+        ),
+        Denied(),
+        Mock(
+            info={
+                "pid": 3,
+                "name": "proc3",
+                "username": "user",
+                "cpu_percent": 1.0,
+                "memory_percent": 7.0,
+            }
+        ),
+        Mock(
+            info={
+                "pid": 4,
+                "name": "proc4",
+                "username": "user",
+                "cpu_percent": None,
+                "memory_percent": None,
+            }
+        ),
     ]
 
     def mock_process_iter(fields):
@@ -262,31 +280,28 @@ def test_processes_sort_skip_and_clamp(tmp_path, monkeypatch):
         assert results[3]["pid"] == 4  # CPU None, mem None
 
         # Test limit clamping
-        test_cases = [
-            (0, 1),
-            (2, 2),
-            (1000, 4),
-        ]
-
-        for limit_param, expected_count in test_cases:
+        for limit_param, expected_pids in [(0, [2]), (2, [2, 3]), (1000, [2, 3, 1, 4])]:
             response = client.get(f"/processes?limit={limit_param}", headers=headers())
-            data = response.json()
-            assert len(data["results"]) == expected_count
+            assert [row["pid"] for row in response.json()["results"]] == expected_pids
 
 
-def test_processes_sort_skip_and_clamp_with_150_processes(tmp_path, monkeypatch):
+def test_processes_limit_is_capped_at_100(tmp_path, monkeypatch):
     import systemgate.main as main
 
     # Create 150 processes with varying CPU/memory
     processes = []
     for i in range(150):
-        processes.append(Mock(info={
-            "pid": i + 1,
-            "name": f"proc{i+1}",
-            "username": "user",
-            "cpu_percent": float(i % 10),  # CPU 0-9
-            "memory_percent": float(i % 5),  # Memory 0-4
-        }))
+        processes.append(
+            Mock(
+                info={
+                    "pid": i + 1,
+                    "name": f"proc{i + 1}",
+                    "username": "user",
+                    "cpu_percent": float(i % 10),  # CPU 0-9
+                    "memory_percent": float(i % 5),  # Memory 0-4
+                }
+            )
+        )
 
     monkeypatch.setattr(main.psutil, "process_iter", lambda fields: processes)
 
