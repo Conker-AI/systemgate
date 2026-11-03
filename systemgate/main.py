@@ -149,7 +149,10 @@ def vitals():
     # container's own filesystem and saying so is the difference between
     # telemetry and a misleading number.
     disk_path = os.environ.get("SYSTEMGATE_DISK_PATH", "/")
-    disk = psutil.disk_usage(disk_path)
+    try:
+        disk = psutil.disk_usage(disk_path)
+    except OSError:
+        disk = None
 
     # Read from psutil itself rather than from the environment, so this reports
     # where the numbers came from instead of where they were asked to come from.
