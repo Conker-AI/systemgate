@@ -155,7 +155,7 @@ def collect(psutil, docker_factory=None, *, procfs, limit=100, clock=time.time):
     try:
         client = docker_factory()
         for index, container in enumerate(
-            client.containers.list(all=True, limit=limit + 1)
+            client.containers.list(all=True, limit=limit + 1, sparse=True)
         ):
             if index >= limit:
                 sections["containers"]["truncated"] = True
@@ -166,6 +166,7 @@ def collect(psutil, docker_factory=None, *, procfs, limit=100, clock=time.time):
                 if not isinstance(identity, str) or not identity or len(identity) > 128:
                     error("containers", "container_identity_unavailable")
                     continue
+                # Sparse Docker list metadata avoids per-container inspect/stats calls.
                 names = attrs.get("Names") or []
                 add(
                     "containers",
