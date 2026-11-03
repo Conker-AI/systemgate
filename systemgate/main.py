@@ -170,7 +170,8 @@ def vitals():
         "cpu_percent": psutil.cpu_percent(interval=0.05),
         "cpu_count": psutil.cpu_count(),
         "memory": psutil.virtual_memory()._asdict(),
-        "disk": disk._asdict(),
+        # null when the disk path cannot be read; source.disk_path says which path.
+        "disk": disk._asdict() if disk is not None else None,
         "load": os.getloadavg() if hasattr(os, "getloadavg") else [0.0, 0.0, 0.0],
         "temps": temps,
         "source": {
@@ -217,7 +218,6 @@ def services(limit: int = 80):
     try:
         connections = psutil.net_connections(kind="inet")
     except (psutil.AccessDenied, OSError):
-        connections = []
         return {
             "status": "unavailable",
             "results": [],
