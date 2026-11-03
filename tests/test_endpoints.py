@@ -123,6 +123,22 @@ def test_vitals_with_mocked_psutil(tmp_path, monkeypatch):
         assert data["memory"]["total"] == 100
 
 
+def test_vitals_survive_an_unreadable_disk_path(tmp_path, monkeypatch):
+    import systemgate.main as main
+
+    monkeypatch.setenv("SYSTEMGATE_DISK_PATH", str(tmp_path / "missing"))
+    monkeypatch.setattr(main.psutil, "sensors_temperatures", lambda fahrenheit=False: {}, raising=False)
+
+    with make_client(tmp_path, monkeypatch) as client:
+        response = client.get("/vitals", headers=headers())
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["disk"] is None
+    assert data["source"]["disk_path"] == str(tmp_path / "missing")
+    assert data["memory"]["total"] > 0
+
+
 def test_containers_truthfully_reports_unavailable(tmp_path, monkeypatch):
     with make_client(tmp_path, monkeypatch) as client:
         data = client.get("/containers", headers=headers()).json()

@@ -212,6 +212,8 @@ def test_services_survive_a_denied_connection_listing(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert data["results"] == []
     assert data["metadata_only"] is True
+    assert data["status"] == "unavailable"
+    assert data["errors"] == ["service_enumeration_unavailable"]
 
 
 def test_processes_sort_skip_and_clamp(tmp_path, monkeypatch):

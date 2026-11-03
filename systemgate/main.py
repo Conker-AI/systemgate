@@ -149,7 +149,10 @@ def vitals():
     # container's own filesystem and saying so is the difference between
     # telemetry and a misleading number.
     disk_path = os.environ.get("SYSTEMGATE_DISK_PATH", "/")
-    disk = psutil.disk_usage(disk_path)
+    try:
+        disk = psutil.disk_usage(disk_path)
+    except OSError:
+        disk = None
 
     # Read from psutil itself rather than from the environment, so this reports
     # where the numbers came from instead of where they were asked to come from.
@@ -167,7 +170,8 @@ def vitals():
         "cpu_percent": psutil.cpu_percent(interval=0.05),
         "cpu_count": psutil.cpu_count(),
         "memory": psutil.virtual_memory()._asdict(),
-        "disk": disk._asdict(),
+        # null when the disk path cannot be read; source.disk_path says which path.
+        "disk": disk._asdict() if disk is not None else None,
         "load": os.getloadavg() if hasattr(os, "getloadavg") else [0.0, 0.0, 0.0],
         "temps": temps,
         "source": {
@@ -214,7 +218,13 @@ def services(limit: int = 80):
     try:
         connections = psutil.net_connections(kind="inet")
     except (psutil.AccessDenied, OSError):
-        connections = []
+        return {
+            "status": "unavailable",
+            "results": [],
+            "source": "psutil.net_connections",
+            "metadata_only": True,
+            "errors": ["service_enumeration_unavailable"],
+        }
     for conn in connections:
         if str(getattr(conn, "status", "") or "") != "LISTEN":
             continue
