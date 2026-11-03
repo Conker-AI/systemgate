@@ -215,6 +215,13 @@ def services(limit: int = 80):
         connections = psutil.net_connections(kind="inet")
     except (psutil.AccessDenied, OSError):
         connections = []
+        return {
+            "status": "unavailable",
+            "results": [],
+            "source": "psutil.net_connections",
+            "metadata_only": True,
+            "errors": ["service_enumeration_unavailable"],
+        }
     for conn in connections:
         if str(getattr(conn, "status", "") or "") != "LISTEN":
             continue
