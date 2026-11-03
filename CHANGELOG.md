@@ -6,6 +6,14 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+## 0.5.0
+
+- **Unavailable data is reported, not hidden or failed.** `/vitals` answers `disk: null` when
+  `SYSTEMGATE_DISK_PATH` is invalid instead of a 500; `/services` answers
+  `status: "unavailable"` with `errors: ["service_enumeration_unavailable"]` when the host denies
+  the listing, instead of an empty inventory reported as success. An invalid or out-of-range
+  `SYSTEMGATE_PORT` stops startup with a clear configuration error.
+
 - **Backup verification reads each archive once instead of twice.** `GET /backups` hashed every
   snapshot file and then read every archive member's payload to the end, doubling the disk reads
   of large model archives on each request. The hash already proves the bytes match the manifest,
