@@ -6,6 +6,11 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+## 0.5.1
+
+- **The image takes Debian's security fixes newer than its base** (apt, CVE-2026-109518).
+  No code change.
+
 ## 0.5.0
 
 - **Unavailable data is reported, not hidden or failed.** `/vitals` answers `disk: null` when
