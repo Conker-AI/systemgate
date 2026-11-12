@@ -15,6 +15,7 @@ import tarfile
 import time
 from datetime import datetime
 from pathlib import Path, PurePosixPath
+from typing import NoReturn
 
 FORMAT = "conker-snapshot-1"
 SERVICES = {
@@ -49,7 +50,7 @@ class InvalidSnapshot(ValueError):
         super().__init__(reason)
 
 
-def _invalid(reason: str, status: str = "invalid") -> None:
+def _invalid(reason: str, status: str = "invalid") -> NoReturn:
     raise InvalidSnapshot(status, reason)
 
 
