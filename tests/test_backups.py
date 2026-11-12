@@ -14,11 +14,28 @@ from systemgate.config import get_settings
 # Independently specified producer contract, so changing the consumer's required
 # inventory cannot silently change the fixtures to agree with the bug.
 STORES = {"pi", "toolgate", "systemgate", "qdrant", "ollama", "memorygate-backups"}
-SERVICES = {"pi", "toolgate", "memorygate", "systemgate", "embeddings", "postgres",
-            "qdrant", "ollama", "searxng"}
-FILES = {*(name + ".tar" for name in STORES), "memorygate.dump", "postgres-globals.sql",
-         "config/env", "config/versions.env", "config/docker-compose.yml", "config/compose.json",
-         "config/runtime.json", "memorygate/runtime-token"}
+SERVICES = {
+    "pi",
+    "toolgate",
+    "memorygate",
+    "systemgate",
+    "embeddings",
+    "postgres",
+    "qdrant",
+    "ollama",
+    "searxng",
+}
+FILES = {
+    *(name + ".tar" for name in STORES),
+    "memorygate.dump",
+    "postgres-globals.sql",
+    "config/env",
+    "config/versions.env",
+    "config/docker-compose.yml",
+    "config/compose.json",
+    "config/runtime.json",
+    "memorygate/runtime-token",
+}
 
 
 def snapshot(root, name="snapshot-a", created="2026-01-01T00:00:00+00:00"):
@@ -35,11 +52,18 @@ def snapshot(root, name="snapshot-a", created="2026-01-01T00:00:00+00:00"):
                 member.size = len(value)
                 archive.addfile(member, io.BytesIO(value))
         else:
-            path.write_bytes(b"PGDMPfixture" if filename == "memorygate.dump" else b"secret-placeholder")
-    manifest = {"format": "conker-snapshot-1", "status": "complete", "created_at": created,
-                "images": {name: {"id": "sha256:" + "a" * 64} for name in SERVICES},
-                "stores": {name: {} for name in STORES}, "deletion_ledger": "unavailable",
-                "execution_journal": "unavailable"}
+            path.write_bytes(
+                b"PGDMPfixture" if filename == "memorygate.dump" else b"secret-placeholder"
+            )
+    manifest = {
+        "format": "conker-snapshot-1",
+        "status": "complete",
+        "created_at": created,
+        "images": {name: {"id": "sha256:" + "a" * 64} for name in SERVICES},
+        "stores": {name: {} for name in STORES},
+        "deletion_ledger": "unavailable",
+        "execution_journal": "unavailable",
+    }
     save_manifest(directory, manifest)
     return directory
 
@@ -49,8 +73,11 @@ def save_manifest(directory, manifest=None):
         manifest = json.loads((directory / "manifest.json").read_text())
     manifest["files"] = {
         path.relative_to(directory).as_posix(): {
-            "size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        } for path in directory.rglob("*") if path.is_file() and path.name != "manifest.json"
+            "size": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for path in directory.rglob("*")
+        if path.is_file() and path.name != "manifest.json"
     }
     (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
@@ -83,8 +110,21 @@ def test_tampering_same_size_and_mtime_cannot_remain_verified(tmp_path):
     assert result["rejected"][0]["status"] == "invalid"
 
 
-@pytest.mark.parametrize("change", ["missing", "extra", "partial", "format", "images",
-                                    "stores", "timestamp", "malformed", "postgres", "archive"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing",
+        "extra",
+        "partial",
+        "format",
+        "images",
+        "stores",
+        "timestamp",
+        "malformed",
+        "postgres",
+        "archive",
+    ],
+)
 def test_invalid_snapshots_are_never_recovery_points(tmp_path, change):
     directory = snapshot(tmp_path)
     path = directory / "manifest.json"
@@ -102,9 +142,13 @@ def test_invalid_snapshots_are_never_recovery_points(tmp_path, change):
     elif change == "malformed":
         path.write_text('{"secret-do-not-print":')
     else:
-        field, value = {"partial": ("status", "writing"), "format": ("format", "future"),
-                        "images": ("images", {}), "stores": ("stores", {}),
-                        "timestamp": ("created_at", "invalid")}[change]
+        field, value = {
+            "partial": ("status", "writing"),
+            "format": ("format", "future"),
+            "images": ("images", {}),
+            "stores": ("stores", {}),
+            "timestamp": ("created_at", "invalid"),
+        }[change]
         manifest[field] = value
         path.write_text(json.dumps(manifest))
     result = backups.backup_status(tmp_path)
@@ -113,8 +157,10 @@ def test_invalid_snapshots_are_never_recovery_points(tmp_path, change):
     assert "secret-do-not-print" not in json.dumps(result)
 
 
-@pytest.mark.parametrize("member_name,kind", [("../escape", "file"), ("pi.db", "link"),
-                                              ("pi.db", "dir"), ("missing.db", "file")])
+@pytest.mark.parametrize(
+    "member_name,kind",
+    [("../escape", "file"), ("pi.db", "link"), ("pi.db", "dir"), ("missing.db", "file")],
+)
 def test_even_hash_matching_unsafe_archives_fail(tmp_path, member_name, kind):
     directory = snapshot(tmp_path)
     with tarfile.open(directory / "pi.tar", "w") as archive:
@@ -145,7 +191,7 @@ def test_a_truncated_archive_is_never_a_recovery_point(tmp_path):
     data = buffer.getvalue()
     # pi.db's 5016 bytes occupy 5120 padded, so the cut lands 100 bytes into the
     # second member's payload.
-    (directory / "pi.tar").write_bytes(data[:512 + 5120 + 512 + 100])
+    (directory / "pi.tar").write_bytes(data[: 512 + 5120 + 512 + 100])
     save_manifest(directory)
     result = backups.backup_status(tmp_path)
     assert result["latest"] is None
@@ -181,8 +227,9 @@ def test_only_the_required_store_payload_is_opened(tmp_path, monkeypatch):
 
 def test_read_errors_are_unverifiable_without_leaking_payload(tmp_path, monkeypatch):
     snapshot(tmp_path)
-    monkeypatch.setattr(backups, "_hash", lambda path: (_ for _ in ()).throw(
-        PermissionError("SECRET-IN-ERROR")))
+    monkeypatch.setattr(
+        backups, "_hash", lambda path: (_ for _ in ()).throw(PermissionError("SECRET-IN-ERROR"))
+    )
     result = backups.backup_status(tmp_path)
     assert result["latest"] is None
     assert result["rejected"][0]["status"] == "unverifiable"
@@ -225,6 +272,7 @@ def test_endpoint_reads_the_configured_mount_and_requires_auth(tmp_path, monkeyp
     monkeypatch.setenv("SYSTEMGATE_BACKUP_ROOT", str(tmp_path / "backups"))
     snapshot(tmp_path / "backups")
     from systemgate.main import app
+
     with TestClient(app) as client:
         assert client.get("/backups").status_code == 401
         body = client.get("/backups", headers={"X-SystemGate-Key": "backup-test-key-1234"}).json()

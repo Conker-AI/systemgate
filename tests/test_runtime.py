@@ -117,9 +117,7 @@ def test_bounds_and_pid_reuse():
     ps.process_iter.return_value = [NS(info={**original, "pid": pid}) for pid in range(42, 47)]
     value = collect(ps, lambda: client, procfs="/proc", limit=1)
     assert value["processes"]["truncated"] and value["ports"]["truncated"]
-    assert all(
-        len(value[s]["results"]) <= 1 for s in ("processes", "ports", "containers")
-    )
+    assert all(len(value[s]["results"]) <= 1 for s in ("processes", "ports", "containers"))
     ps.Process.return_value.create_time.return_value = 999
     value = collect(ps, lambda: client, procfs="/proc")
     assert value["processes"]["results"] == []
@@ -133,10 +131,7 @@ def test_total_failure_is_not_empty_success():
     ps.net_connections.side_effect = PermissionError("private")
     client.containers.list.side_effect = PermissionError("private")
     value = collect(ps, lambda: client, procfs="/proc")
-    assert all(
-        value[s]["status"] == "unavailable"
-        for s in ("processes", "containers", "ports")
-    )
+    assert all(value[s]["status"] == "unavailable" for s in ("processes", "containers", "ports"))
     assert value["status"] == "partial" and "private" not in str(value)
 
 
@@ -159,9 +154,7 @@ def test_route_owner_auth_and_no_mutations(tmp_path, monkeypatch):
         assert response.status_code == 200 and response.json()["mode"] == "observed"
         assert response.json()["containers"]["status"] == "unavailable"
         assert (
-            api.post(
-                "/runtime", headers={"X-SystemGate-Key": "test-runtime-key"}
-            ).status_code
+            api.post("/runtime", headers={"X-SystemGate-Key": "test-runtime-key"}).status_code
             == 405
         )
 
