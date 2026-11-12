@@ -11,7 +11,9 @@ def slow(monkeypatch):
     monkeypatch.setattr(auth, "_matched", {})
     calls = []
     real = auth.hashlib.pbkdf2_hmac
-    monkeypatch.setattr(auth.hashlib, "pbkdf2_hmac", lambda *args: calls.append(args) or real(*args))
+    monkeypatch.setattr(
+        auth.hashlib, "pbkdf2_hmac", lambda *args: calls.append(args) or real(*args)
+    )
     return calls
 
 

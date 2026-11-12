@@ -23,11 +23,7 @@ def _text(value, limit=160):
 
 
 def _number(value):
-    return (
-        value
-        if type(value) in (int, float) and math.isfinite(value) and value >= 0
-        else None
-    )
+    return value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
 
 
 def _identity(pid, created):
@@ -48,9 +44,7 @@ def collect(psutil, docker_factory=None, *, procfs, limit=100, clock=time.time):
         value = sections[section]
         if code not in value["errors"]:
             value["errors"].append(code)
-        value["status"] = (
-            "unavailable" if unavailable and not value["results"] else "partial"
-        )
+        value["status"] = "unavailable" if unavailable and not value["results"] else "partial"
 
     def add(section, row):
         value = sections[section]
@@ -89,9 +83,7 @@ def collect(psutil, docker_factory=None, *, procfs, limit=100, clock=time.time):
                         "createdAt": created,
                         "name": _text(info.get("name")),
                         "status": _text(info.get("status"), 40) or "unknown",
-                        "memoryBytes": _number(
-                            getattr(info.get("memory_info"), "rss", None)
-                        ),
+                        "memoryBytes": _number(getattr(info.get("memory_info"), "rss", None)),
                         "cpuPercent": None,
                         "command": None,
                         "user": None,
@@ -113,14 +105,8 @@ def collect(psutil, docker_factory=None, *, procfs, limit=100, clock=time.time):
             if index >= MAX_SCAN:
                 sections["ports"]["truncated"] = True
                 break
-            protocol = {socket.SOCK_STREAM: "tcp", socket.SOCK_DGRAM: "udp"}.get(
-                conn.type
-            )
-            if (
-                not protocol
-                or (protocol == "tcp" and conn.status != "LISTEN")
-                or not conn.laddr
-            ):
+            protocol = {socket.SOCK_STREAM: "tcp", socket.SOCK_DGRAM: "udp"}.get(conn.type)
+            if not protocol or (protocol == "tcp" and conn.status != "LISTEN") or not conn.laddr:
                 continue
             address, port = _text(conn.laddr.ip, 64), conn.laddr.port
             process_id = None
@@ -194,10 +180,7 @@ def collect(psutil, docker_factory=None, *, procfs, limit=100, clock=time.time):
                         binding.get("PublicPort"),
                         binding.get("PrivatePort"),
                     )
-                    if any(
-                        type(p) is not int or not 1 <= p <= 65535
-                        for p in (public, private)
-                    ):
+                    if any(type(p) is not int or not 1 <= p <= 65535 for p in (public, private)):
                         error("ports", "invalid_container_binding")
                         continue
                     key = f"{identity}:{address}:{public}:{private}:{protocol}"
@@ -240,14 +223,10 @@ def collect(psutil, docker_factory=None, *, procfs, limit=100, clock=time.time):
         "collectionSeconds": max(0, finished - started),
         "source": {
             "procfs": procfs,
-            "processScope": "configured-procfs"
-            if procfs != "/proc"
-            else "collector-namespace",
+            "processScope": "configured-procfs" if procfs != "/proc" else "collector-namespace",
             "networkScope": "collector-namespace",
             "containerScope": (
-                "configured-container-source"
-                if container_source_configured
-                else "unavailable"
+                "configured-container-source" if container_source_configured else "unavailable"
             ),
         },
         "status": "partial"

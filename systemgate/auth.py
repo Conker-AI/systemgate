@@ -39,4 +39,3 @@ def verify_key(key: str | None, encoded: str) -> bool:
         _matched.clear()
     _matched[encoded] = fast
     return True
-

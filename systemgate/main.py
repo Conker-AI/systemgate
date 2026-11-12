@@ -63,7 +63,9 @@ def _ensure_key_hash(settings: Settings) -> None:
     path.chmod(0o600)
 
 
-def require_admin(request: Request, x_systemgate_key: str | None = Header(None, alias="X-SystemGate-Key")) -> str:
+def require_admin(
+    request: Request, x_systemgate_key: str | None = Header(None, alias="X-SystemGate-Key")
+) -> str:
     path = _secret_path(request.app.state.settings)
     encoded = path.read_text(encoding="utf-8").strip() if path.exists() else ""
     if not verify_key(x_systemgate_key, encoded):
@@ -141,7 +143,10 @@ def vitals():
     temps = {}
     try:
         sensors = psutil.sensors_temperatures
-        temps = {name: [entry._asdict() for entry in values] for name, values in sensors(fahrenheit=False).items()}
+        temps = {
+            name: [entry._asdict() for entry in values]
+            for name, values in sensors(fahrenheit=False).items()
+        }
     except (AttributeError, OSError):
         temps = {}
     # Which filesystem is measured is a deployment detail, so report it rather
@@ -203,7 +208,28 @@ def _safe_addr(addr: Any) -> str:
         scope = "loopback"
     elif ip.startswith("100."):
         scope = "tailscale"
-    elif ip.startswith(("10.", "192.168.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")):
+    elif ip.startswith(
+        (
+            "10.",
+            "192.168.",
+            "172.16.",
+            "172.17.",
+            "172.18.",
+            "172.19.",
+            "172.20.",
+            "172.21.",
+            "172.22.",
+            "172.23.",
+            "172.24.",
+            "172.25.",
+            "172.26.",
+            "172.27.",
+            "172.28.",
+            "172.29.",
+            "172.30.",
+            "172.31.",
+        )
+    ):
         scope = "private-lan"
     else:
         scope = "public-or-host"
@@ -275,7 +301,13 @@ def processes(limit: int = 20):
             rows.append({field: proc.info.get(field) for field in _PROCESS_FIELDS})
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-    rows.sort(key=lambda item: (float(item.get("cpu_percent") or 0), float(item.get("memory_percent") or 0)), reverse=True)
+    rows.sort(
+        key=lambda item: (
+            float(item.get("cpu_percent") or 0),
+            float(item.get("memory_percent") or 0),
+        ),
+        reverse=True,
+    )
     return {"results": rows[:limit]}
 
 
@@ -299,7 +331,10 @@ def logs_errors():
 def _run_summary(command: list[str]) -> dict[str, Any]:
     try:
         result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=12)
-        return {"ok": result.returncode == 0, "output": _bounded(result.stdout or result.stderr, 2000)}
+        return {
+            "ok": result.returncode == 0,
+            "output": _bounded(result.stdout or result.stderr, 2000),
+        }
     except Exception as exc:
         return {"ok": False, "output": type(exc).__name__}
 

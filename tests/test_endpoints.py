@@ -13,6 +13,7 @@ def make_client(tmp_path, monkeypatch):
     monkeypatch.setenv("SYSTEMGATE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("SYSTEMGATE_BACKUP_ROOT", str(tmp_path / "backups"))
     from systemgate.main import app
+
     return TestClient(app)
 
 
@@ -49,11 +50,14 @@ def test_health_leaks_nothing_to_an_unauthenticated_caller(tmp_path, monkeypatch
 def test_vitals_declares_which_machine_it_measured(tmp_path, monkeypatch):
     """Host or container is a deployment detail; the caller must not guess."""
     import systemgate.main as main
+
     monkeypatch.setattr(main.psutil, "cpu_percent", lambda interval=0: 1.0)
     monkeypatch.setattr(main.psutil, "cpu_count", lambda: 1)
     monkeypatch.setattr(main.psutil, "virtual_memory", lambda: Mock(_asdict=lambda: {}))
     monkeypatch.setattr(main.psutil, "disk_usage", lambda path: Mock(_asdict=lambda: {}))
-    monkeypatch.setattr(main.psutil, "sensors_temperatures", lambda fahrenheit=False: {}, raising=False)
+    monkeypatch.setattr(
+        main.psutil, "sensors_temperatures", lambda fahrenheit=False: {}, raising=False
+    )
 
     monkeypatch.setattr(main.psutil, "PROCFS_PATH", "/proc", raising=False)
     with make_client(tmp_path, monkeypatch) as client:
@@ -111,11 +115,18 @@ def test_redirecting_procfs_actually_changes_what_is_read(tmp_path):
 
 def test_vitals_with_mocked_psutil(tmp_path, monkeypatch):
     import systemgate.main as main
+
     monkeypatch.setattr(main.psutil, "cpu_percent", lambda interval=0: 12.5)
     monkeypatch.setattr(main.psutil, "cpu_count", lambda: 8)
-    monkeypatch.setattr(main.psutil, "virtual_memory", lambda: Mock(_asdict=lambda: {"total": 100, "available": 50}))
-    monkeypatch.setattr(main.psutil, "disk_usage", lambda path: Mock(_asdict=lambda: {"total": 200, "free": 100}))
-    monkeypatch.setattr(main.psutil, "sensors_temperatures", lambda fahrenheit=False: {}, raising=False)
+    monkeypatch.setattr(
+        main.psutil, "virtual_memory", lambda: Mock(_asdict=lambda: {"total": 100, "available": 50})
+    )
+    monkeypatch.setattr(
+        main.psutil, "disk_usage", lambda path: Mock(_asdict=lambda: {"total": 200, "free": 100})
+    )
+    monkeypatch.setattr(
+        main.psutil, "sensors_temperatures", lambda fahrenheit=False: {}, raising=False
+    )
 
     with make_client(tmp_path, monkeypatch) as client:
         data = client.get("/vitals", headers=headers()).json()
@@ -127,7 +138,9 @@ def test_vitals_survive_an_unreadable_disk_path(tmp_path, monkeypatch):
     import systemgate.main as main
 
     monkeypatch.setenv("SYSTEMGATE_DISK_PATH", str(tmp_path / "missing"))
-    monkeypatch.setattr(main.psutil, "sensors_temperatures", lambda fahrenheit=False: {}, raising=False)
+    monkeypatch.setattr(
+        main.psutil, "sensors_temperatures", lambda fahrenheit=False: {}, raising=False
+    )
 
     with make_client(tmp_path, monkeypatch) as client:
         response = client.get("/vitals", headers=headers())
@@ -187,7 +200,17 @@ def test_processes_logs_packages_and_backups_are_bounded(tmp_path, monkeypatch):
     backup_root.mkdir()
     (backup_root / "20260101T000000Z").mkdir()
     import systemgate.main as main
-    proc = Mock(info={"pid": 1, "name": "python", "username": "me", "cpu_percent": 1.0, "memory_percent": 2.0, "cmdline": ["python", "app.py"]})
+
+    proc = Mock(
+        info={
+            "pid": 1,
+            "name": "python",
+            "username": "me",
+            "cpu_percent": 1.0,
+            "memory_percent": 2.0,
+            "cmdline": ["python", "app.py"],
+        }
+    )
     monkeypatch.setattr(main.psutil, "process_iter", lambda fields: [proc])
     monkeypatch.setattr(main, "_journal_errors", lambda: "bounded errors")
     monkeypatch.setattr(main, "_run_summary", lambda command: {"ok": True, "output": "[]"})
@@ -204,9 +227,17 @@ def test_processes_logs_packages_and_backups_are_bounded(tmp_path, monkeypatch):
 
 def test_processes_never_return_command_lines(tmp_path, monkeypatch):
     import systemgate.main as main
+
     asked = []
-    info = {"pid": 7, "name": "app", "username": "me", "cpu_percent": 0.0, "memory_percent": 0.0,
-            "cmdline": ["app", "--password", "hunter2"], "environ": {"TOKEN": "hunter2"}}
+    info = {
+        "pid": 7,
+        "name": "app",
+        "username": "me",
+        "cpu_percent": 0.0,
+        "memory_percent": 0.0,
+        "cmdline": ["app", "--password", "hunter2"],
+        "environ": {"TOKEN": "hunter2"},
+    }
 
     def process_iter(fields):
         asked.extend(fields)
@@ -249,12 +280,17 @@ def test_a_failed_command_reports_only_the_kind_of_error(monkeypatch):
 
 def test_startup_primes_the_key_check_so_wrong_keys_stay_cheap(tmp_path, monkeypatch):
     from systemgate import auth
+
     monkeypatch.setattr(auth, "_matched", {})
     with make_client(tmp_path, monkeypatch) as client:
         slow = []
         real = auth.hashlib.pbkdf2_hmac
-        monkeypatch.setattr(auth.hashlib, "pbkdf2_hmac", lambda *args: slow.append(args) or real(*args))
-        assert client.get("/vitals", headers={"X-SystemGate-Key": "wrong-key-0000"}).status_code == 401
+        monkeypatch.setattr(
+            auth.hashlib, "pbkdf2_hmac", lambda *args: slow.append(args) or real(*args)
+        )
+        assert (
+            client.get("/vitals", headers={"X-SystemGate-Key": "wrong-key-0000"}).status_code == 401
+        )
         assert client.get("/processes", headers=headers()).status_code == 200
 
     assert slow == []

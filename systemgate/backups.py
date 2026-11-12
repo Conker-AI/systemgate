@@ -4,6 +4,7 @@ Keep this format in step with companion/scripts/recovery.py: a directory name
 or manifest claiming success is not evidence that the snapshot is intact.
 Verification does not establish deletion replay, vault recovery or restorability.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -14,14 +15,32 @@ import tarfile
 import time
 from datetime import datetime
 from pathlib import Path, PurePosixPath
+from typing import NoReturn
 
 FORMAT = "conker-snapshot-1"
-SERVICES = {"pi", "toolgate", "memorygate", "systemgate", "embeddings", "postgres",
-            "qdrant", "ollama", "searxng"}
+SERVICES = {
+    "pi",
+    "toolgate",
+    "memorygate",
+    "systemgate",
+    "embeddings",
+    "postgres",
+    "qdrant",
+    "ollama",
+    "searxng",
+}
 STORES = {"pi", "toolgate", "systemgate", "qdrant", "ollama", "memorygate-backups"}
-REQUIRED = {*(name + ".tar" for name in STORES), "memorygate.dump", "postgres-globals.sql",
-            "config/env", "config/versions.env", "config/docker-compose.yml", "config/compose.json",
-            "config/runtime.json", "memorygate/runtime-token"}
+REQUIRED = {
+    *(name + ".tar" for name in STORES),
+    "memorygate.dump",
+    "postgres-globals.sql",
+    "config/env",
+    "config/versions.env",
+    "config/docker-compose.yml",
+    "config/compose.json",
+    "config/runtime.json",
+    "memorygate/runtime-token",
+}
 
 
 class InvalidSnapshot(ValueError):
@@ -31,14 +50,20 @@ class InvalidSnapshot(ValueError):
         super().__init__(reason)
 
 
-def _invalid(reason: str, status: str = "invalid") -> None:
+def _invalid(reason: str, status: str = "invalid") -> NoReturn:
     raise InvalidSnapshot(status, reason)
 
 
 def _safe_name(name: str) -> bool:
     path = PurePosixPath(name)
-    return (bool(name) and not path.is_absolute() and ".." not in path.parts
-            and "\\" not in name and ":" not in name and path.as_posix() == name)
+    return (
+        bool(name)
+        and not path.is_absolute()
+        and ".." not in path.parts
+        and "\\" not in name
+        and ":" not in name
+        and path.as_posix() == name
+    )
 
 
 def _files(directory: Path) -> dict[str, Path]:
@@ -70,8 +95,11 @@ def _archive(path: Path, required: str | None) -> None:
     seen = set()
     with tarfile.open(path, "r:") as archive:
         for member in archive:
-            if (not _safe_name(member.name) or member.name in seen
-                    or not (member.isfile() or member.isdir())):
+            if (
+                not _safe_name(member.name)
+                or member.name in seen
+                or not (member.isfile() or member.isdir())
+            ):
                 _invalid("Archive has unsafe or duplicate members; obtain an intact snapshot.")
             seen.add(member.name)
             if member.name == required and not member.isfile():
@@ -94,7 +122,9 @@ def verify_snapshot(directory: Path) -> dict:
     if manifest_path.is_symlink():
         _invalid("Manifest must not be a link; obtain an intact snapshot.")
     if not manifest_path.is_file():
-        _invalid("Manifest missing: incomplete or legacy backup. Create a new backup.", "incomplete")
+        _invalid(
+            "Manifest missing: incomplete or legacy backup. Create a new backup.", "incomplete"
+        )
     manifest_before = _signature(manifest_path)
     if manifest_path.stat().st_size > 4 * 1024 * 1024:
         _invalid("Manifest exceeds the supported size; verify it with the recovery command.")
@@ -121,25 +151,39 @@ def verify_snapshot(directory: Path) -> dict:
     if files.keys() != actual.keys():
         _invalid("Files are missing or unexpected; obtain an intact snapshot.")
     images = manifest.get("images")
-    if (not isinstance(images, dict) or images.keys() != SERVICES
-            or any(not isinstance(image, dict)
-                   or not re.fullmatch(r"sha256:[0-9a-f]{64}", str(image.get("id", "")))
-                   for image in images.values())):
+    if (
+        not isinstance(images, dict)
+        or images.keys() != SERVICES
+        or any(
+            not isinstance(image, dict)
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", str(image.get("id", "")))
+            for image in images.values()
+        )
+    ):
         _invalid("Image identities are invalid; obtain an intact version manifest.")
     stores = manifest.get("stores")
-    if (not isinstance(stores, dict) or not stores.keys() >= STORES
-            or any(name not in STORES and not re.fullmatch(r"extra-[a-z]+-[0-9]+", name)
-                   for name in stores)
-            or {name + ".tar" for name in stores} != {n for n in files if n.endswith(".tar")}):
+    if (
+        not isinstance(stores, dict)
+        or not stores.keys() >= STORES
+        or any(
+            name not in STORES and not re.fullmatch(r"extra-[a-z]+-[0-9]+", name) for name in stores
+        )
+        or {name + ".tar" for name in stores} != {n for n in files if n.endswith(".tar")}
+    ):
         _invalid("Storage inventory and archives disagree; obtain an intact snapshot.")
     before = {name: _signature(path) for name, path in actual.items()}
     for name, path in actual.items():
         record = files[name]
-        if (not _safe_name(name) or not isinstance(record, dict)
-                or record.keys() != {"size", "sha256"}
-                or type(record.get("size")) is not int or record["size"] < 0
-                or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("sha256", "")))
-                or before[name][2] != record["size"] or _hash(path) != record["sha256"]):
+        if (
+            not _safe_name(name)
+            or not isinstance(record, dict)
+            or record.keys() != {"size", "sha256"}
+            or type(record.get("size")) is not int
+            or record["size"] < 0
+            or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("sha256", "")))
+            or before[name][2] != record["size"]
+            or _hash(path) != record["sha256"]
+        ):
             _invalid("File size or integrity hash differs; obtain an intact snapshot.")
     with (directory / "memorygate.dump").open("rb") as stream:
         if stream.read(5) != b"PGDMP":
@@ -147,25 +191,43 @@ def verify_snapshot(directory: Path) -> dict:
     for name, path in actual.items():
         if name.endswith(".tar"):
             _archive(path, {"pi.tar": "pi.db", "toolgate.tar": "toolgate.db"}.get(name))
-    if (actual.keys() != _files(directory).keys() or _signature(manifest_path) != manifest_before
-            or any(_signature(path) != before[name] for name, path in actual.items())):
+    if (
+        actual.keys() != _files(directory).keys()
+        or _signature(manifest_path) != manifest_before
+        or any(_signature(path) != before[name] for name, path in actual.items())
+    ):
         _invalid("Snapshot changed during verification; wait for backup to finish and retry.")
-    return {"created_at": created_at, "status": "verified", "verified_at": time.time(),
-            "verification": "manifest-files-and-archives", "restore_status": "not_tested",
-            "deletion_ledger": manifest.get("deletion_ledger", "unknown"),
-            "execution_journal": manifest.get("execution_journal", "unknown")}
+    return {
+        "created_at": created_at,
+        "status": "verified",
+        "verified_at": time.time(),
+        "verification": "manifest-files-and-archives",
+        "restore_status": "not_tested",
+        "deletion_ledger": manifest.get("deletion_ledger", "unknown"),
+        "execution_journal": manifest.get("execution_journal", "unknown"),
+    }
 
 
 def backup_status(root: Path) -> dict:
-    result = {"root": str(root), "status": "unknown", "latest": None, "results": [],
-              "rejected": [], "checked_at": time.time(), "verified_count": 0,
-              "rejected_count": 0}
+    result = {
+        "root": str(root),
+        "status": "unknown",
+        "latest": None,
+        "results": [],
+        "rejected": [],
+        "checked_at": time.time(),
+        "verified_count": 0,
+        "rejected_count": 0,
+    }
     try:
         entries = sorted(root.iterdir(), key=lambda item: item.name)
     except OSError:
-        return {**result, "status": "unavailable",
-                "reason": "Backup root cannot be read. Mount backups at /backups and set "
-                          "SYSTEMGATE_BACKUP_ROOT=/backups inside the container."}
+        return {
+            **result,
+            "status": "unavailable",
+            "reason": "Backup root cannot be read. Mount backups at /backups and set "
+            "SYSTEMGATE_BACKUP_ROOT=/backups inside the container.",
+        }
     verified, rejected = [], []
     for directory in entries:
         if not directory.is_dir() and not directory.is_symlink():
@@ -177,11 +239,22 @@ def backup_status(root: Path) -> dict:
             rejected.append({**row, "status": exc.status, "reason": exc.reason})
         except (OSError, ValueError, tarfile.TarError):
             # Parser and OS errors can contain credentials or recovered text.
-            rejected.append({**row, "status": "unverifiable",
-                             "reason": "Snapshot could not be verified. Check permissions "
-                                       "and run the recovery verifier on the original."})
+            rejected.append(
+                {
+                    **row,
+                    "status": "unverifiable",
+                    "reason": "Snapshot could not be verified. Check permissions "
+                    "and run the recovery verifier on the original.",
+                }
+            )
     verified.sort(key=lambda row: (row["created_at"], row["name"]), reverse=True)
-    return {**result, "status": "degraded" if rejected else ("ok" if verified else "empty"),
-            "latest": verified[0] if verified else None, "results": verified[:20],
-            "rejected": rejected[:20], "verified_count": len(verified),
-            "rejected_count": len(rejected), "checked_at": time.time()}
+    return {
+        **result,
+        "status": "degraded" if rejected else ("ok" if verified else "empty"),
+        "latest": verified[0] if verified else None,
+        "results": verified[:20],
+        "rejected": rejected[:20],
+        "verified_count": len(verified),
+        "rejected_count": len(rejected),
+        "checked_at": time.time(),
+    }
