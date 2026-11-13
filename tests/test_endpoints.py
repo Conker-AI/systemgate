@@ -294,3 +294,38 @@ def test_startup_primes_the_key_check_so_wrong_keys_stay_cheap(tmp_path, monkeyp
         assert client.get("/processes", headers=headers()).status_code == 200
 
     assert slow == []
+
+
+def test_a_rotated_admin_key_replaces_the_old_one(tmp_path, monkeypatch):
+    with make_client(tmp_path, monkeypatch) as client:
+        assert client.get("/vitals", headers=headers()).status_code == 200
+    stored = tmp_path / "data" / "admin-key.pbkdf2"
+    before = stored.read_text(encoding="utf-8")
+
+    monkeypatch.setenv("SYSTEMGATE_ADMIN_KEY", "system-rotated-key-5678")
+    from systemgate.main import app
+
+    with TestClient(app) as client:
+        assert client.get("/vitals", headers=headers()).status_code == 401
+        assert (
+            client.get(
+                "/vitals", headers={"X-SystemGate-Key": "system-rotated-key-5678"}
+            ).status_code
+            == 200
+        )
+    assert stored.read_text(encoding="utf-8") != before
+    assert not stored.with_name(stored.name + ".new").exists()
+    if sys.platform != "win32":
+        assert stored.stat().st_mode & 0o777 == 0o600
+
+    # Without a configured key the stored one stays; the same key again rewrites nothing.
+    monkeypatch.delenv("SYSTEMGATE_ADMIN_KEY")
+    after = stored.read_text(encoding="utf-8")
+    with TestClient(app) as client:
+        assert (
+            client.get(
+                "/vitals", headers={"X-SystemGate-Key": "system-rotated-key-5678"}
+            ).status_code
+            == 200
+        )
+    assert stored.read_text(encoding="utf-8") == after
