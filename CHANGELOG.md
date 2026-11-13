@@ -6,6 +6,13 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+- **A changed `SYSTEMGATE_ADMIN_KEY` takes effect at the next start.** The first key's hash
+  was kept for good, so after a rotation the old key still worked and the new one was refused.
+  Now a configured key that does not match the stored hash replaces it (written owner-only,
+  then swapped in); with no key configured the stored one stays.
+- **Only 100.64.0.0/10 is labelled `tailscale`** in `/services`. Every `100.x` listener was,
+  so a public address such as 100.1.2.3 read as private.
+
 - **Each tag gets a GitHub Release page and an SBOM.** The Release page's notes are the
   version's CHANGELOG section. Every image carries an SPDX SBOM (BuildKit attestation) inside
   the image index, and the signed build provenance covers that index digest. Check one with

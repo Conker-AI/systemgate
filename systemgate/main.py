@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 import platform
 import re
@@ -55,12 +56,20 @@ def _secret_path(settings: Settings) -> Path:
 def _ensure_key_hash(settings: Settings) -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     path = _secret_path(settings)
-    if path.exists():
+    if path.exists() and (
+        not settings.admin_key
+        or verify_key(settings.admin_key, path.read_text(encoding="utf-8").strip())
+    ):
         return
     if not settings.admin_key:
         raise RuntimeError("SYSTEMGATE_ADMIN_KEY is required")
-    path.write_text(hash_key(settings.admin_key), encoding="utf-8")
-    path.chmod(0o600)
+    # A configured key that does not match the stored hash is a rotation: the new key replaces
+    # the old one, so a key taken out of service stops working. Written owner-only, then swapped.
+    staged = path.with_name(path.name + ".new")
+    descriptor = os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(hash_key(settings.admin_key))
+    os.replace(staged, path)
 
 
 def require_admin(
@@ -197,6 +206,17 @@ def _safe_process_name(pid: int | None) -> str:
         return "unknown"
 
 
+# Tailscale hands out addresses from the shared CGNAT range only; the rest of 100.x is public.
+_TAILSCALE = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _in_tailscale_range(ip: str) -> bool:
+    try:
+        return ipaddress.ip_address(ip) in _TAILSCALE
+    except ValueError:
+        return False
+
+
 def _safe_addr(addr: Any) -> str:
     ip = str(getattr(addr, "ip", "") or "")
     port = int(getattr(addr, "port", 0) or 0)
@@ -206,7 +226,7 @@ def _safe_addr(addr: Any) -> str:
         scope = "container-internal" if Path("/.dockerenv").exists() else "all-interfaces"
     elif ip.startswith("127.") or ip == "::1":
         scope = "loopback"
-    elif ip.startswith("100."):
+    elif _in_tailscale_range(ip):
         scope = "tailscale"
     elif ip.startswith(
         (
