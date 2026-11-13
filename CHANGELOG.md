@@ -6,6 +6,8 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+## 0.5.3
+
 - **A changed `SYSTEMGATE_ADMIN_KEY` takes effect at the next start.** The first key's hash
   was kept for good, so after a rotation the old key still worked and the new one was refused.
   Now a configured key that does not match the stored hash replaces it (written owner-only,
