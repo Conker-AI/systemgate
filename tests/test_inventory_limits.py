@@ -30,6 +30,7 @@ def headers():
         ("100.127.255.254", "tailscale"),
         ("100.1.2.3", "public-or-host"),
         ("100.128.0.1", "public-or-host"),
+        ("not-an-address", "public-or-host"),
         ("10.1.2.3", "private-lan"),
         ("192.168.1.9", "private-lan"),
         ("172.16.0.1", "private-lan"),

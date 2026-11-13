@@ -329,3 +329,22 @@ def test_a_rotated_admin_key_replaces_the_old_one(tmp_path, monkeypatch):
             == 200
         )
     assert stored.read_text(encoding="utf-8") == after
+
+
+def test_it_refuses_to_start_with_no_key_configured_or_stored(tmp_path, monkeypatch):
+    monkeypatch.delenv("SYSTEMGATE_ADMIN_KEY", raising=False)
+    monkeypatch.setenv("SYSTEMGATE_DATA_DIR", str(tmp_path / "data"))
+    from systemgate.main import app
+
+    with pytest.raises(RuntimeError, match="SYSTEMGATE_ADMIN_KEY is required"), TestClient(app):
+        pass
+
+
+def test_a_lost_key_file_degrades_health_without_naming_the_path(tmp_path, monkeypatch):
+    with make_client(tmp_path, monkeypatch) as client:
+        (tmp_path / "data" / "admin-key.pbkdf2").unlink()
+        body = client.get("/health").json()
+
+    assert body["status"] == "degraded" and body["degraded"] == ["admin_key"]
+    assert body["checks"]["admin_key"] == {"status": "unavailable", "reason": "unreachable"}
+    assert str(tmp_path) not in str(body)
