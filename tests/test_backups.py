@@ -2,7 +2,11 @@ import hashlib
 import io
 import json
 import os
+import shutil
+import sys
 import tarfile
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -284,3 +288,130 @@ def test_container_default_matches_backup_mount(monkeypatch):
     monkeypatch.delenv("SYSTEMGATE_BACKUP_ROOT", raising=False)
     assert get_settings().backup_root == Path("/backups").resolve()
     assert "SYSTEMGATE_BACKUP_ROOT: /backups" in Path("docker-compose.yml").read_text()
+
+
+# Hash reuse across listings (GET /backups used to re-read every snapshot on every call).
+
+VOLATILE = {"checked_at", "verified_at"}
+
+
+def stable(value):
+    """A listing without the times that change on every call."""
+    if isinstance(value, dict):
+        return {key: stable(item) for key, item in value.items() if key not in VOLATILE}
+    if isinstance(value, list):
+        return [stable(item) for item in value]
+    return value
+
+
+@pytest.fixture
+def hashed(monkeypatch):
+    """Reuse hashes on any platform, treat every file as settled, and record each hash."""
+    monkeypatch.setattr(backups, "REUSE_HASHES", True)
+    monkeypatch.setattr(backups, "SETTLED_NS", -(10**18))
+    monkeypatch.setattr(backups, "_HASHES", backups._HashCache())
+    calls = []
+    original = backups._hash
+
+    def record(path):
+        calls.append(Path(path))
+        return original(path)
+
+    monkeypatch.setattr(backups, "_hash", record)
+    return calls
+
+
+def test_a_second_listing_of_unchanged_files_hashes_nothing(tmp_path, hashed):
+    snapshot(tmp_path)
+    first = backups.backup_status(tmp_path)
+    assert len(hashed) == len(FILES)
+    hashed.clear()
+    second = backups.backup_status(tmp_path)
+    assert hashed == []
+    assert first["verified_count"] == second["verified_count"] == 1
+
+
+def test_new_content_and_mtime_give_the_new_hash(tmp_path, hashed):
+    directory = snapshot(tmp_path)
+    assert backups.backup_status(tmp_path)["latest"] is not None
+    path = directory / "config/env"
+    before = path.stat()
+    path.write_bytes(b"y" * before.st_size)
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 5 * 10**9))
+    # Same size, and the manifest still holds the old hash, so a reused old hash would verify.
+    assert backups.backup_status(tmp_path)["latest"] is None
+    save_manifest(directory)
+    assert backups.backup_status(tmp_path)["latest"] is not None
+
+
+def test_a_same_size_file_touched_to_a_new_mtime_is_rehashed(tmp_path, hashed):
+    directory = snapshot(tmp_path)
+    backups.backup_status(tmp_path)
+    hashed.clear()
+    path = directory / "config/env"
+    before = path.stat()
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 10**9))
+    assert backups.backup_status(tmp_path)["latest"] is not None
+    assert hashed == [path]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="st_ctime is the creation time on Windows")
+def test_a_rewrite_that_restores_size_and_mtime_is_rehashed(tmp_path, hashed):
+    directory = snapshot(tmp_path)
+    assert backups.backup_status(tmp_path)["latest"] is not None
+    path = directory / "config/env"
+    before = path.stat()
+    time.sleep(0.05)  # past the file system's timestamp tick, so the change time moves
+    path.write_bytes(b"x" * before.st_size)
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    hashed.clear()
+    assert backups.backup_status(tmp_path)["latest"] is None
+    assert path in hashed
+
+
+def test_reused_hashes_leave_the_response_unchanged(tmp_path, hashed, monkeypatch):
+    snapshot(tmp_path, "old", "2026-01-01T00:00:00+00:00")
+    snapshot(tmp_path, "new", "2026-02-01T00:00:00+00:00")
+    (tmp_path / "broken").mkdir()
+    first = backups.backup_status(tmp_path)
+    hashed.clear()
+    second = backups.backup_status(tmp_path)
+    assert hashed == []
+    monkeypatch.setattr(backups, "REUSE_HASHES", False)
+    uncached = backups.backup_status(tmp_path)
+    assert stable(first) == stable(second) == stable(uncached)
+    assert list(first) == list(second) == list(uncached)
+    assert [list(row) for row in first["results"]] == [list(row) for row in second["results"]]
+    assert first["status"] == "degraded" and first["verified_count"] == 2
+
+
+def test_the_cache_holds_only_files_of_the_latest_listing(tmp_path, hashed):
+    snapshot(tmp_path, "keep")
+    gone = snapshot(tmp_path, "gone")
+    backups.backup_status(tmp_path)
+    assert len(backups._HASHES) == 2 * len(FILES)
+    shutil.rmtree(gone)
+    backups.backup_status(tmp_path)
+    assert len(backups._HASHES) == len(FILES)
+    backups.backup_status(tmp_path / "missing")
+    assert len(backups._HASHES) == 0
+
+
+def test_a_file_changed_within_the_settle_window_is_hashed_again(tmp_path, hashed, monkeypatch):
+    monkeypatch.setattr(backups, "SETTLED_NS", 3600 * 10**9)
+    snapshot(tmp_path)
+    backups.backup_status(tmp_path)
+    hashed.clear()
+    assert backups.backup_status(tmp_path)["latest"] is not None
+    assert len(hashed) == len(FILES)
+
+
+def test_concurrent_listings_agree(tmp_path, hashed):
+    snapshot(tmp_path, "a")
+    snapshot(tmp_path, "b", "2026-02-01T00:00:00+00:00")
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        listings = list(pool.map(lambda _: backups.backup_status(tmp_path), range(16)))
+    assert {json.dumps(stable(listing), sort_keys=True) for listing in listings} == {
+        json.dumps(stable(listings[0]), sort_keys=True)
+    }
+    assert listings[0]["verified_count"] == 2

@@ -11,7 +11,9 @@ import hashlib
 import json
 import re
 import stat
+import sys
 import tarfile
+import threading
 import time
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -91,6 +93,51 @@ def _signature(path: Path) -> tuple:
     return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
 
 
+# A file's hash is reused only while its whole signature is unchanged. On Linux st_ctime is
+# the change time, which no write and no utime() can set back, so a rewrite that restores
+# size and mtime still misses. On Windows it is the creation time, so nothing is reused there.
+REUSE_HASHES = sys.platform != "win32"
+# File times tick in coarse steps (a kernel tick, 2 s on FAT), so a file changed in the same
+# step as it was hashed could keep its signature. Like git's "racily clean" rule, a hash is
+# kept only for a file whose mtime and ctime are older than this when hashing starts.
+SETTLED_NS = 2_000_000_000
+
+
+class _HashCache:
+    """sha256 per file path for the current process, keyed by the file's signature."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._entries: dict[str, tuple[tuple, str]] = {}
+
+    def digest(self, path: Path, signature: tuple, seen: set[str]) -> str:
+        key = str(path)
+        seen.add(key)
+        with self._lock:
+            entry = self._entries.get(key)
+        if REUSE_HASHES and entry is not None and entry[0] == signature:
+            return entry[1]
+        started = time.time_ns()
+        digest = _hash(path)
+        settled = max(signature[3], signature[4]) < started - SETTLED_NS
+        if REUSE_HASHES and settled and _signature(path) == signature:
+            with self._lock:
+                self._entries[key] = (signature, digest)
+        return digest
+
+    def keep_only(self, seen: set[str]) -> None:
+        """Bound the cache to the files the latest listing looked at."""
+        with self._lock:
+            self._entries = {key: self._entries[key] for key in seen & self._entries.keys()}
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._entries)
+
+
+_HASHES = _HashCache()
+
+
 def _archive(path: Path, required: str | None) -> None:
     seen = set()
     with tarfile.open(path, "r:") as archive:
@@ -115,7 +162,8 @@ def _archive(path: Path, required: str | None) -> None:
         _invalid("Required SQLite store is missing; obtain an intact snapshot.")
 
 
-def verify_snapshot(directory: Path) -> dict:
+def verify_snapshot(directory: Path, seen: set[str] | None = None) -> dict:
+    seen = set() if seen is None else seen
     if directory.is_symlink() or not directory.is_dir():
         _invalid("Snapshot is not an original directory; check the backup mount.")
     manifest_path = directory / "manifest.json"
@@ -182,7 +230,7 @@ def verify_snapshot(directory: Path) -> dict:
             or record["size"] < 0
             or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("sha256", "")))
             or before[name][2] != record["size"]
-            or _hash(path) != record["sha256"]
+            or _HASHES.digest(path, before[name], seen) != record["sha256"]
         ):
             _invalid("File size or integrity hash differs; obtain an intact snapshot.")
     with (directory / "memorygate.dump").open("rb") as stream:
@@ -209,6 +257,14 @@ def verify_snapshot(directory: Path) -> dict:
 
 
 def backup_status(root: Path) -> dict:
+    seen: set[str] = set()
+    try:
+        return _backup_status(root, seen)
+    finally:
+        _HASHES.keep_only(seen)
+
+
+def _backup_status(root: Path, seen: set[str]) -> dict:
     result = {
         "root": str(root),
         "status": "unknown",
@@ -234,7 +290,7 @@ def backup_status(root: Path) -> dict:
             continue
         row = {"name": directory.name, "path": str(directory)}
         try:
-            verified.append({**row, **verify_snapshot(directory)})
+            verified.append({**row, **verify_snapshot(directory, seen)})
         except InvalidSnapshot as exc:
             rejected.append({**row, "status": exc.status, "reason": exc.reason})
         except (OSError, ValueError, tarfile.TarError):

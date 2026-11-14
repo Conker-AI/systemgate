@@ -6,6 +6,13 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+- **`GET /backups` no longer re-reads every snapshot on every call.** Each file's SHA-256 is
+  reused while its device, inode, size, mtime and ctime are unchanged (and those times are at
+  least 2 s older than the hashing), kept in process memory for the files of the latest listing
+  only. A file that changes is hashed again; the response is unchanged. 10 listings of 5
+  snapshots of 50 MB: about 6-7.7 s before, 1.4 s after (later calls about 60 ms instead of
+  about 700 ms).
+
 ## 0.5.3
 
 - **A changed `SYSTEMGATE_ADMIN_KEY` takes effect at the next start.** The first key's hash
