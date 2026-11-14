@@ -155,7 +155,10 @@ def _archive(path: Path, required: str | None) -> None:
             # next header rejects archives cut inside a member's data, so only
             # the required store's SQLite magic needs a payload read.
             if member.isfile() and member.name == required:
-                with archive.extractfile(member) as stream:
+                stream = archive.extractfile(member)
+                if stream is None:
+                    _invalid("Required SQLite store is not a file; obtain an intact snapshot.")
+                with stream:
                     if stream.read(16) != b"SQLite format 3\x00":
                         _invalid("Required SQLite store is invalid; obtain an intact snapshot.")
     if required and required not in seen:
