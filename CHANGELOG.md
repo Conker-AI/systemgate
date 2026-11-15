@@ -10,13 +10,13 @@ replacing a module has to be a decision with visible consequences.
   runtime collector (unusable ports, corrupt stored key hash, malformed or oversized manifests,
   time-zone-less and future snapshots, scan limits, broken containers); coverage 94% -> 99%
   (floor 93 -> 99). `verify_snapshot` now refuses, instead of crashing on, an archive member
-  that cannot be opened (the last pyright error; baseline 1 -> 0). No behaviour change otherwise.
+  that cannot be opened (the last pyright error; baseline 1 -> 0). No behaviour change otherwise. (#26)
 - **`GET /backups` no longer re-reads every snapshot on every call.** Each file's SHA-256 is
   reused while its device, inode, size, mtime and ctime are unchanged (and those times are at
   least 2 s older than the hashing), kept in process memory for the files of the latest listing
   only. A file that changes is hashed again; the response is unchanged. 10 listings of 5
   snapshots of 50 MB: about 6-7.7 s before, 1.4 s after (later calls about 60 ms instead of
-  about 700 ms).
+  about 700 ms). (#25)
 
 ## 0.5.3
 
