@@ -6,6 +6,8 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+## 0.5.4
+
 - **Quality pass: more refusal tests, no type errors left.** 48 tests through the HTTP API and the
   runtime collector (unusable ports, corrupt stored key hash, malformed or oversized manifests,
   time-zone-less and future snapshots, scan limits, broken containers); coverage 94% -> 99%
