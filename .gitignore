@@ -8,3 +8,8 @@ data/
 
 .coverage
 .coverage.*
+
+# Local test scratch
+.test-runs/
+.test-tmp/
+.test-deps/
