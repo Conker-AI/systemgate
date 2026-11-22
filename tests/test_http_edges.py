@@ -113,16 +113,13 @@ def test_a_service_limit_below_one_still_answers(tmp_path, monkeypatch):
 
 
 def test_a_manifest_that_is_a_link_is_not_a_snapshot(tmp_path, monkeypatch):
-    from test_backups import snapshot
+    from test_backups import link_or_skip, snapshot
 
     directory = snapshot(tmp_path / "backups")
     manifest = directory / "manifest.json"
     real = directory / "real-manifest.json"
     manifest.rename(real)
-    try:
-        manifest.symlink_to(real)
-    except OSError:
-        pytest.skip("Creating symlinks requires additional Windows privileges")
+    link_or_skip(manifest, real)
     with make_client(tmp_path, monkeypatch) as client:
         body = client.get("/backups", headers=good()).json()
     assert body["latest"] is None

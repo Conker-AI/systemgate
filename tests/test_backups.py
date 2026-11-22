@@ -240,12 +240,17 @@ def test_read_errors_are_unverifiable_without_leaking_payload(tmp_path, monkeypa
     assert "SECRET-IN-ERROR" not in json.dumps(result)
 
 
-def test_links_are_not_followed_as_snapshots_or_payloads(tmp_path):
-    directory = snapshot(tmp_path)
+def link_or_skip(link, target, *, target_is_directory=False):
+    """Create a symlink, or skip the test where the OS refuses (Windows without the privilege)."""
     try:
-        (tmp_path / "alias").symlink_to(directory, target_is_directory=True)
+        link.symlink_to(target, target_is_directory=target_is_directory)
     except OSError:
         pytest.skip("Creating symlinks requires additional Windows privileges")
+
+
+def test_links_are_not_followed_as_snapshots_or_payloads(tmp_path):
+    directory = snapshot(tmp_path)
+    link_or_skip(tmp_path / "alias", directory, target_is_directory=True)
     result = backups.backup_status(tmp_path)
     assert result["verified_count"] == 1
     assert result["rejected"][0]["name"] == "alias"
