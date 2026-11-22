@@ -110,3 +110,45 @@ def test_a_service_limit_below_one_still_answers(tmp_path, monkeypatch):
         response = client.get("/services", params={"limit": -5}, headers=good())
         assert response.status_code == 200
         assert len(response.json()["results"]) <= 1
+
+
+def test_a_manifest_that_is_a_link_is_not_a_snapshot(tmp_path, monkeypatch):
+    from test_backups import snapshot
+
+    directory = snapshot(tmp_path / "backups")
+    manifest = directory / "manifest.json"
+    real = directory / "real-manifest.json"
+    manifest.rename(real)
+    try:
+        manifest.symlink_to(real)
+    except OSError:
+        pytest.skip("Creating symlinks requires additional Windows privileges")
+    with make_client(tmp_path, monkeypatch) as client:
+        body = client.get("/backups", headers=good()).json()
+    assert body["latest"] is None
+    assert body["rejected"][0]["name"] == directory.name
+    assert "Manifest must not be a link" in body["rejected"][0]["reason"]
+
+
+def test_a_host_procfs_with_a_meminfo_is_adopted_at_import_and_one_without_is_not(
+    tmp_path, monkeypatch
+):
+    import importlib
+
+    import psutil
+
+    import systemgate.main as main
+
+    monkeypatch.setattr(psutil, "PROCFS_PATH", "/proc", raising=False)
+    fake = tmp_path / "hostproc"
+    fake.mkdir()
+    monkeypatch.setenv("SYSTEMGATE_PROCFS_PATH", str(fake))
+    importlib.reload(main)
+    assert psutil.PROCFS_PATH == "/proc"  # no meminfo there: left alone
+    (fake / "meminfo").write_text("MemTotal: 1 kB\n", encoding="utf-8")
+    importlib.reload(main)
+    assert str(fake) == psutil.PROCFS_PATH
+    monkeypatch.delenv("SYSTEMGATE_PROCFS_PATH")
+    monkeypatch.setattr(psutil, "PROCFS_PATH", "/proc", raising=False)
+    importlib.reload(main)
+    assert psutil.PROCFS_PATH == "/proc"
