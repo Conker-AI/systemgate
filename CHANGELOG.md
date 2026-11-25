@@ -6,6 +6,8 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+- **Security:** the image build fails if libzstd1 is older than 1.5.7+dfsg-1+deb13u1 (CVE-2026-124851), so a cached layer from before the fix cannot be reused.
+
 ## 0.5.4
 
 - **Quality pass: more refusal tests, no type errors left.** 48 tests through the HTTP API and the
